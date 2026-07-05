@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "petekstatic"
 description = "petekStatic — the geomodel layer: build a populated static reservoir model and read volumes (OOIP/OGIP) + view bundles from Python (Rust core)."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{ name = "Kristian dF Kollsgård", email = "kkollsg@gmail.com" }]
 keywords = ["subsurface", "reservoir", "geomodel", "volumetrics", "geostatistics"]
 classifiers = [

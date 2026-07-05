@@ -50,9 +50,8 @@ srs-spill = { path = "crates/srs-spill", version = "0.1.0" }
 # srs-model: the top of the DAG — the StaticModel aggregate + the ratified
 # MC-regeneration seam (StaticModelTemplate / RealizationDraw / builder).
 srs-model = { path = "crates/srs-model", version = "0.1.0" }
-# CROSS-REPO family deps: crates.io registry pins for publish. The workspace-root
-# `[patch.crates-io]` (bottom of this file) redirects them to the sibling working
-# trees for LOCAL/CI dev builds — dev-only, stripped from the published crates.
+# CROSS-REPO family deps: resolved from crates.io (the family is published; the
+# dev-only [patch.crates-io] was removed at launch).
 # petekTools (pure-leaf toolkit, downstream DAG edge): gridding kernels
 # (ConvergentGridder / warm-start), units, and the pproj container.
 petektools = "0.2.0"
@@ -77,16 +76,3 @@ all = { level = "deny", priority = -1 }
 [profile.release]
 lto = true
 codegen-units = 1
-
-# --- DEV-ONLY: local family builds ------------------------------------------
-# The cross-repo `petektools`/`petekio` deps above are crates.io registry pins
-# (for publish). This patch redirects them to the sibling working trees so
-# local/CI dev builds compile against family HEAD (and there is exactly ONE copy
-# of each in the lockfile). `[patch]` is a WORKSPACE-ROOT concern: cargo strips
-# it from every published member manifest, and a downstream consumer of any
-# published petekstatic crate never sees it — it resolves the registry pins from
-# crates.io. Harmless in the published artifacts. Remove only if the sibling
-# checkouts go away. (Verified: `cargo publish --dry-run` uses the registry pin.)
-[patch.crates-io]
-petektools = { path = "../petekTools" }
-petekio = { path = "../petekIO" }

@@ -22,6 +22,8 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
+# The petekSuite site is the canonical docs home for the whole family.
+Documentation = "https://peteksuite.readthedocs.io/en/latest/libraries/petekstatic/"
 Repository = "https://github.com/kkollsga/petekstatic"
 Issues = "https://github.com/kkollsga/petekstatic/issues"
 

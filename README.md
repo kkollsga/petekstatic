@@ -16,6 +16,15 @@ that turns model-ready inputs into a populated **`StaticModel`** and owns the
 **petekSim** (dynamic/engineering simulation + the Python product facade)
 consumes across the seam.
 
+## Documentation
+
+The canonical docs for the whole petek family live on the **petekSuite site**
+— petekStatic's pages there:
+
+- **[Library guide](https://peteksuite.readthedocs.io/en/latest/libraries/petekstatic/)** — the petekStatic guide.
+- **Tutorial** — [Static model build (flagship)](https://peteksuite.readthedocs.io/en/latest/tutorials/static-model-build/).
+- **[Notebooks](https://peteksuite.readthedocs.io/en/latest/notebooks/)** — executed examples: [stack model from scatter](https://peteksuite.readthedocs.io/en/latest/notebooks/petekstatic/01_stack_model_from_scatter/) · [volumes & bundles](https://peteksuite.readthedocs.io/en/latest/notebooks/petekstatic/02_volumes_and_bundles/).
+
 ## Where it sits (deps flow one way, downward)
 
 ```

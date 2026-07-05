@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: fmt / clippy / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy (warnings = errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace
+
+  wheel:
+    # Build the abi3-py310 wheel and install + pytest it on each interpreter so
+    # a per-version link/ABI break surfaces here, not for users.
+    name: wheel build + pytest (py ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+      - name: install maturin + pytest
+        run: pip install maturin pytest
+      - name: build release wheel
+        run: maturin build --release --out dist
+      - name: install wheel
+        run: pip install --find-links dist --no-index petekstatic
+      - name: pytest (wheel surface)
+        run: pytest python/tests -q
+      - name: import + build_flat_model smoke
+        run: |
+          python - <<'PY'
+          import petekstatic
+          m = petekstatic.build_flat_model()
+          ip = m.in_place(boi=1.25)
+          assert ip["ooip_sm3"] > 0.0
+          print("petekstatic ok:", ip["ooip_sm3"])
+          PY

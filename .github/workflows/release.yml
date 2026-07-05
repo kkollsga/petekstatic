@@ -5,8 +5,25 @@ on:
 permissions:
   contents: read
 jobs:
+  gates:
+    # Same rust gates as ci.yml — a tag can only publish what passes them.
+    name: gates (fmt / clippy / test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy (warnings = errors)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace
   build-wheels:
     name: wheels (${{ matrix.os }}-${{ matrix.target }})
+    needs: gates
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -31,7 +48,7 @@ jobs:
           path: dist
   publish:
     name: publish to PyPI (trusted publishing)
-    needs: build-wheels
+    needs: [gates, build-wheels]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

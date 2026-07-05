@@ -1,0 +1,10 @@
+# PyO3 extension-module builds on macOS must defer Python symbol resolution to
+# the host interpreter at import time (the symbols aren't linked). maturin sets
+# this itself when building wheels; this makes plain `cargo build` /
+# `maturin develop` of the `petekstatic-py` cdylib link on macOS too. Scoped to
+# Apple targets, so Linux/Windows builds are unaffected.
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

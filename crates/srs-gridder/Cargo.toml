@@ -1,9 +1,11 @@
 [package]
 name = "srs-gridder"
 description = "Convergent gridder (box degenerate case + full convergence)"
+keywords = ["subsurface", "gridding", "geostatistics", "interpolation", "geomodel"]
+categories = ["science", "algorithms", "mathematics"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

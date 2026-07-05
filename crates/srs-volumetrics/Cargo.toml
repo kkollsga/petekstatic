@@ -1,9 +1,11 @@
 [package]
 name = "srs-volumetrics"
 description = "GRV, in-place volumetrics (OOIP/OGIP) and FVF from the populated grid"
+keywords = ["volumetrics", "reservoir", "ooip", "subsurface", "geomodel"]
+categories = ["science"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

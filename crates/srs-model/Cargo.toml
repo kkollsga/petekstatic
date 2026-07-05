@@ -1,9 +1,11 @@
 [package]
 name = "srs-model"
 description = "The StaticModel aggregate + Monte-Carlo regeneration template (top of the geomodel DAG)"
+keywords = ["subsurface", "reservoir", "geomodel", "volumetrics", "geostatistics"]
+categories = ["science", "simulation"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

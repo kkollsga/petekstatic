@@ -1,9 +1,11 @@
 [package]
 name = "srs-grid"
 description = "i,j,k corner-point grid data model (Grid/Cell/KLayer/Segment/Property)"
+keywords = ["subsurface", "reservoir", "grid", "corner-point", "geomodel"]
+categories = ["science", "data-structures"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

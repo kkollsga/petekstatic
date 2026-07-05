@@ -1,9 +1,11 @@
 [package]
 name = "srs-spill"
 description = "Out-of-core backing-storage mode for the StaticModel — k-slab spill onto a petekTools store + the memory-budget/build-mode decision"
+keywords = ["subsurface", "reservoir", "out-of-core", "grid", "geomodel"]
+categories = ["science", "data-structures"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

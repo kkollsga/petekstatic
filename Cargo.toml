@@ -11,50 +11,54 @@ members = [
     "crates/srs-uncertainty",
     "crates/srs-spill",
     "crates/srs-model",
+    "crates/petekstatic-py",
 ]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
-license-file = "LICENSE"
-repository = "https://github.com/kkollsga/petekStatic"
+# BSL-1.1 declared via its SPDX identifier (BUSL-1.1). The full text ships as the
+# repo-root LICENSE; the SPDX id is what crates.io / PyPI surface. (A workspace-
+# root `license-file` does not package into the individual member crates, so the
+# machine-readable SPDX id is the correct, portable declaration here.)
+license = "BUSL-1.1"
+repository = "https://github.com/kkollsga/petekstatic"
 rust-version = "1.80"
 
 [workspace.dependencies]
+# INTERNAL workspace crates: `{ path, version }` — path drives LOCAL builds, the
+# version pin is what cargo writes into the published manifest (the crates are
+# published together, in dependency order). No `[patch]` needed for these.
 # petekStatic's single error type (house-style §1), the analog of petekSim's SrsError.
-petekstatic-error = { path = "crates/petekstatic-error" }
-srs-grid = { path = "crates/srs-grid" }
-srs-gridder = { path = "crates/srs-gridder" }
-srs-petro = { path = "crates/srs-petro" }
-srs-wireframe = { path = "crates/srs-wireframe" }
+petekstatic-error = { path = "crates/petekstatic-error", version = "0.1.0" }
+srs-grid = { path = "crates/srs-grid", version = "0.1.0" }
+srs-gridder = { path = "crates/srs-gridder", version = "0.1.0" }
+srs-petro = { path = "crates/srs-petro", version = "0.1.0" }
+srs-wireframe = { path = "crates/srs-wireframe", version = "0.1.0" }
 # srs-data: the petekio→wireframe ingest adapter (carries petekio's neutral
 # Distribution DTO; the DTO→sampler mapping lives downstream in petekSim/srs-core).
-srs-data = { path = "crates/srs-data" }
+srs-data = { path = "crates/srs-data", version = "0.1.0" }
 # srs-volumetrics + srs-uncertainty: relocated from petekSim 2026-07-03 (last
 # petekSim SHA fe6343c) per graph `decision_layer_charters` — GRV/in-place +
 # Monte Carlo over static-model realizations now live in the GEOMODEL layer.
-srs-volumetrics = { path = "crates/srs-volumetrics" }
-srs-uncertainty = { path = "crates/srs-uncertainty" }
+srs-volumetrics = { path = "crates/srs-volumetrics", version = "0.1.0" }
+srs-uncertainty = { path = "crates/srs-uncertainty", version = "0.1.0" }
 # srs-spill: the out-of-core backing-storage mode (memory budget + k-slab spill),
 # extracted from srs-model 2026-07-05 (organize wave P10). A leaf crate below the
 # model aggregate — srs-model re-exports its surface so the public path is unchanged.
-srs-spill = { path = "crates/srs-spill" }
+srs-spill = { path = "crates/srs-spill", version = "0.1.0" }
 # srs-model: the top of the DAG — the StaticModel aggregate + the ratified
 # MC-regeneration seam (StaticModelTemplate / RealizationDraw / builder).
-srs-model = { path = "crates/srs-model" }
-# petekTools (pure-leaf toolkit, downstream DAG edge): home of the domain-agnostic
-# gridding kernels (ConvergentGridder / warm-start), units, and pproj container.
-# PRE-RELEASE FAMILY MODE (SI migration, decision_si_units_standard): path dep on
-# ../petekTools HEAD — Wave C needs its HEAD units surface. The publish batch
-# swaps this back to the crates.io registry version (was `petektools = "0.1"`).
-petektools = { path = "../petekTools" }
+srs-model = { path = "crates/srs-model", version = "0.1.0" }
+# CROSS-REPO family deps: crates.io registry pins for publish. The workspace-root
+# `[patch.crates-io]` (bottom of this file) redirects them to the sibling working
+# trees for LOCAL/CI dev builds — dev-only, stripped from the published crates.
+# petekTools (pure-leaf toolkit, downstream DAG edge): gridding kernels
+# (ConvergentGridder / warm-start), units, and the pproj container.
+petektools = "0.2.0"
 # petekio (DATA layer): the upstream input-data crate. Its `GeoError` composes
 # into `StaticError` via `#[from]` so `?` chains DATA→GEOMODEL at the seam.
-# PRE-RELEASE FAMILY MODE (SI migration): path dep on ../petekIO HEAD — the
-# migration depends on petekio HEAD's negative-down elevation z-convention
-# (xyz() = subsea elevation, 0.3.0 window). The publish batch swaps this back to
-# the registry version (was `petekio = "0.2.1"`).
-petekio = { path = "../petekIO" }
+petekio = "0.3.0"
 thiserror = "2"
 # Config-layer serde (task_petekstatic_spec_mirror, testing doctrine R7): the
 # declarative build/MC config values (HorizonStack family, BuildSpec, McSettings,
@@ -73,3 +77,16 @@ all = { level = "deny", priority = -1 }
 [profile.release]
 lto = true
 codegen-units = 1
+
+# --- DEV-ONLY: local family builds ------------------------------------------
+# The cross-repo `petektools`/`petekio` deps above are crates.io registry pins
+# (for publish). This patch redirects them to the sibling working trees so
+# local/CI dev builds compile against family HEAD (and there is exactly ONE copy
+# of each in the lockfile). `[patch]` is a WORKSPACE-ROOT concern: cargo strips
+# it from every published member manifest, and a downstream consumer of any
+# published petekstatic crate never sees it — it resolves the registry pins from
+# crates.io. Harmless in the published artifacts. Remove only if the sibling
+# checkouts go away. (Verified: `cargo publish --dry-run` uses the registry pin.)
+[patch.crates-io]
+petektools = { path = "../petekTools" }
+petekio = { path = "../petekIO" }

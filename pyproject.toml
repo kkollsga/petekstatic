@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "petekstatic"
+description = "petekStatic — the geomodel layer: build a populated static reservoir model and read volumes (OOIP/OGIP) + view bundles from Python (Rust core)."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Kristian dF Kollsgård", email = "kkollsg@gmail.com" }]
+keywords = ["subsurface", "reservoir", "geomodel", "volumetrics", "geostatistics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: OS Independent",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/kkollsga/petekstatic"
+Issues = "https://github.com/kkollsga/petekstatic/issues"
+
+[tool.maturin]
+# The compiled extension is petekstatic._petekstatic (the cdylib in
+# crates/petekstatic-py/); the importable Python package is python/petekstatic/,
+# which re-exports the extension surface.
+manifest-path = "crates/petekstatic-py/Cargo.toml"
+module-name = "petekstatic._petekstatic"
+python-source = "python"

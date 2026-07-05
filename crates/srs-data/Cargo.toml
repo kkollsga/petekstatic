@@ -1,9 +1,11 @@
 [package]
 name = "srs-data"
 description = "Thin petekio adapter: map model-ready ModelInputs -> srs input types + constraining wireframe (no data processing)"
+keywords = ["subsurface", "geoscience", "ingestion", "reservoir", "geomodel"]
+categories = ["science"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

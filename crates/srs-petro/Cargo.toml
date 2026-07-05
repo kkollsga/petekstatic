@@ -1,9 +1,11 @@
 [package]
 name = "srs-petro"
 description = "Petrophysics: log upscaling, facies"
+keywords = ["petrophysics", "reservoir", "upscaling", "facies", "geomodel"]
+categories = ["science"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

@@ -1,9 +1,11 @@
 [package]
 name = "srs-uncertainty"
 description = "Monte Carlo sampling, distributions, P90/P50/P10 (over static-model realizations)"
+keywords = ["montecarlo", "uncertainty", "reservoir", "subsurface", "statistics"]
+categories = ["science", "mathematics", "simulation"]
 version.workspace = true
 edition.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

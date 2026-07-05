@@ -9,20 +9,20 @@
 //! **Units (SI):** area in **m²**, depths/lengths in **m** (positive down),
 //! volumes in **m³** / **Sm³**. FVF (`boi`/`bgi`) enters as a validated scalar.
 
-use petekstatic_error::StaticError;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-use srs_gridder::{Conformity, SolveOpts};
-use srs_model::{
+use petekstatic::error::StaticError;
+use petekstatic::gridder::{Conformity, SolveOpts};
+use petekstatic::model::{
     ConstantPriors, GasFvf, InPlace, OilFvf, SectionSpec, StaticModel as CoreModel,
     StaticModelBuilder,
 };
-use srs_wireframe::{
+use petekstatic::wireframe::{
     Boundary, Contact, ContactKind, GriddedDepth, Hardness, Horizon, HorizonRole, Wireframe,
 };
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
-use srs_model::BuildOpts;
+use petekstatic::model::BuildOpts;
 
 /// Map a [`StaticError`] into a Python `ValueError`.
 fn py_err(e: StaticError) -> PyErr {
@@ -56,7 +56,7 @@ fn flat_wireframe(n: usize, depth_m: f64, owc_m: f64) -> Wireframe {
 }
 
 /// A populated static reservoir model — the Python handle over the Rust
-/// [`srs_model::StaticModel`]. Construct one with [`build_flat_model`].
+/// [`petekstatic::model::StaticModel`]. Construct one with [`build_flat_model`].
 #[pyclass(name = "StaticModel")]
 pub struct StaticModel {
     inner: CoreModel,
@@ -151,7 +151,7 @@ impl StaticModel {
     /// to include its zone-average maps (plus a k-slice map when `k_slice` is set).
     #[pyo3(signature = (property=None, k_slice=None))]
     fn map_bundle(&self, property: Option<&str>, k_slice: Option<usize>) -> PyResult<String> {
-        let mut spec = srs_model::MapSpec::new();
+        let mut spec = petekstatic::model::MapSpec::new();
         if let Some(name) = property {
             spec = spec.property(name);
         }

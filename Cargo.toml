@@ -1,16 +1,73 @@
+[package]
+name = "petekstatic"
+description = "petekStatic — the GEOMODEL layer: structural framework, grid construction, property modelling, volumetrics and static uncertainty, consolidated into one crate."
+keywords = ["subsurface", "reservoir", "geomodel", "volumetrics", "geostatistics"]
+categories = ["science", "simulation"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+# The published crate ships no test/example data (house rule).
+exclude = ["/tests", "/examples", "/dev-docs", "/inbox", "/docs", "/python", "/dist-launch"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# petekStatic's single error type (house-style §1); petekio's GeoError and
+# petekTools' AlgoError compose into StaticError via #[from].
+thiserror.workspace = true
+# CROSS-REPO family deps (crates.io): the DATA layer upstream + the horizontal
+# TOOLKIT (gridding kernels / units / pproj). One-directional DAG edges.
+petekio.workspace = true
+petektools.workspace = true
+# Config-layer serde (R7): the declarative build/MC config values round-trip as
+# scenario files; the derives live on the value types across the modules.
+serde.workspace = true
+# The geostat kernels (SGS / resample) and the seeded gridder share petekTools'
+# ndarray Array2 at the seam — pinned to petekTools' version.
+ndarray = "0.17"
+# The `view` bundles + the spill store header + the volume binary-block schema.
+serde_json = "1"
+# Ratified Send/Sync compile-time assertions on the template + model.
+static_assertions = "1"
+# Rayon shards the structured-MC draw loop (one template clone per worker).
+rayon = "1"
+# The MC driver threads a single seeded RNG (petekTools `seeded_rng`) through the
+# samplers; pinned to petekTools' `rand` so the RNG at the seam is one type.
+rand = "0.10"
+# The self-contained volume payload base64-wraps the raw little-endian blocks.
+base64 = "0.22"
+
+[dev-dependencies]
+# Criterion drives every bench (surface / mc / scatter_condition / uncertainty_mc).
+criterion = "0.5"
+# Property-based degenerate-input testing of the layering/collapse/order-repair
+# kernels (testing doctrine R5).
+proptest = "1"
+
+[[bench]]
+name = "surface"
+harness = false
+
+[[bench]]
+name = "mc"
+harness = false
+
+[[bench]]
+name = "scatter_condition"
+harness = false
+
+# The Monte-Carlo toolkit micro-bench (was srs-uncertainty's `mc`; renamed on the
+# merge to avoid a name collision with the model-level `mc` bench above).
+[[bench]]
+name = "uncertainty_mc"
+harness = false
+
 [workspace]
 resolver = "2"
 members = [
-    "crates/petekstatic-error",
-    "crates/srs-grid",
-    "crates/srs-gridder",
-    "crates/srs-petro",
-    "crates/srs-wireframe",
-    "crates/srs-data",
-    "crates/srs-volumetrics",
-    "crates/srs-uncertainty",
-    "crates/srs-spill",
-    "crates/srs-model",
     "crates/petekstatic-py",
 ]
 
@@ -26,30 +83,8 @@ repository = "https://github.com/kkollsga/petekstatic"
 rust-version = "1.80"
 
 [workspace.dependencies]
-# INTERNAL workspace crates: `{ path, version }` — path drives LOCAL builds, the
-# version pin is what cargo writes into the published manifest (the crates are
-# published together, in dependency order). No `[patch]` needed for these.
-# petekStatic's single error type (house-style §1), the analog of petekSim's SrsError.
-petekstatic-error = { path = "crates/petekstatic-error", version = "0.1.0" }
-srs-grid = { path = "crates/srs-grid", version = "0.1.0" }
-srs-gridder = { path = "crates/srs-gridder", version = "0.1.0" }
-srs-petro = { path = "crates/srs-petro", version = "0.1.0" }
-srs-wireframe = { path = "crates/srs-wireframe", version = "0.1.0" }
-# srs-data: the petekio→wireframe ingest adapter (carries petekio's neutral
-# Distribution DTO; the DTO→sampler mapping lives downstream in petekSim/srs-core).
-srs-data = { path = "crates/srs-data", version = "0.1.0" }
-# srs-volumetrics + srs-uncertainty: relocated from petekSim 2026-07-03 (last
-# petekSim SHA fe6343c) per graph `decision_layer_charters` — GRV/in-place +
-# Monte Carlo over static-model realizations now live in the GEOMODEL layer.
-srs-volumetrics = { path = "crates/srs-volumetrics", version = "0.1.0" }
-srs-uncertainty = { path = "crates/srs-uncertainty", version = "0.1.0" }
-# srs-spill: the out-of-core backing-storage mode (memory budget + k-slab spill),
-# extracted from srs-model 2026-07-05 (organize wave P10). A leaf crate below the
-# model aggregate — srs-model re-exports its surface so the public path is unchanged.
-srs-spill = { path = "crates/srs-spill", version = "0.1.0" }
-# srs-model: the top of the DAG — the StaticModel aggregate + the ratified
-# MC-regeneration seam (StaticModelTemplate / RealizationDraw / builder).
-srs-model = { path = "crates/srs-model", version = "0.1.0" }
+# The consolidated library crate (the py binding crate depends on it).
+petekstatic = { path = ".", version = "0.1.0" }
 # CROSS-REPO family deps: resolved from crates.io (the family is published; the
 # dev-only [patch.crates-io] was removed at launch).
 # petekTools (pure-leaf toolkit, downstream DAG edge): gridding kernels
@@ -59,10 +94,6 @@ petektools = "0.2.0"
 # into `StaticError` via `#[from]` so `?` chains DATA→GEOMODEL at the seam.
 petekio = "0.3.0"
 thiserror = "2"
-# Config-layer serde (task_petekstatic_spec_mirror, testing doctrine R7): the
-# declarative build/MC config values (HorizonStack family, BuildSpec, McSettings,
-# draws, …) round-trip as scenario files; the derives live on the value types
-# across the config crates (srs-wireframe / srs-gridder / srs-volumetrics / srs-model).
 serde = { version = "1", features = ["derive"] }
 
 # Warnings are errors (CLAUDE.md gate). Applied per-crate via `[lints] workspace = true`.

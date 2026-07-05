@@ -6,6 +6,29 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+### Packaging — CONSOLIDATED the 10-crate workspace into ONE crate, `petekstatic` (owner ruling)
+- **The ten published workspace crates are now a single crate, `petekstatic`
+  (0.1.0).** `petekstatic-error`, `srs-grid`, `srs-gridder`, `srs-petro`,
+  `srs-wireframe`, `srs-data`, `srs-volumetrics`, `srs-uncertainty`, `srs-spill`
+  and `srs-model` collapse into **modules** of one crate — `petekstatic::{error,
+  wireframe, grid, petro, gridder, volumetrics, uncertainty, data, spill, model}`
+  — preserving today's boundaries and one-directional imports as module discipline.
+- **The `srs-*` crates and `petekstatic-error` are deprecated and will be yanked
+  from crates.io.** Depend on `petekstatic` instead.
+- **Migration.** `srs_model::X` → `petekstatic::model::X` (or the crate-root
+  re-export `petekstatic::X`); `srs_grid::X` → `petekstatic::grid::X`;
+  `srs_wireframe::X` → `petekstatic::wireframe::X`; likewise for every module.
+  The headline API (`StaticModelBuilder`, `StaticModelTemplate`, the `HorizonStack`
+  family, `run_mc` / `McSettings`, `BuildSpec`, `StaticModel`, the view bundles,
+  `StaticError`) is **re-exported at the crate root** — reach it without knowing
+  the module.
+- **The `petekstatic` PyPI wheel is unchanged** — the `petekstatic-py` binding
+  crate simply rebinds onto the consolidated crate; the compiled extension
+  (`petekstatic._petekstatic`) and its Python surface are byte-for-byte the same.
+- **Behaviour-neutral packaging only** — no algorithm, tolerance, determinism seed
+  or public-value change. All perf budgets, determinism tests and acceptance suites
+  moved with their code and pass unchanged.
+
 ### Performance — parallelized per-layer SGS + primary-path structure solves (`task_suite_perf_round2`)
 - **Per-layer zone-property SGS now runs in parallel.** `propagate_sgs_into`'s
   per-`k`-layer sequential-Gaussian sweep was serial; every layer is an independent

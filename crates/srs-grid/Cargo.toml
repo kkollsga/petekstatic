@@ -1,0 +1,15 @@
+[package]
+name = "srs-grid"
+description = "i,j,k corner-point grid data model (Grid/Cell/KLayer/Segment/Property)"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+petekstatic-error.workspace = true
+petektools.workspace = true

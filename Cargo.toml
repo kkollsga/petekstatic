@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/petekstatic-error",
+    "crates/srs-grid",
+    "crates/srs-gridder",
+    "crates/srs-petro",
+    "crates/srs-wireframe",
+    "crates/srs-data",
+    "crates/srs-volumetrics",
+    "crates/srs-uncertainty",
+    "crates/srs-spill",
+    "crates/srs-model",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license-file = "LICENSE"
+repository = "https://github.com/kkollsga/petekStatic"
+rust-version = "1.80"
+
+[workspace.dependencies]
+# petekStatic's single error type (house-style §1), the analog of petekSim's SrsError.
+petekstatic-error = { path = "crates/petekstatic-error" }
+srs-grid = { path = "crates/srs-grid" }
+srs-gridder = { path = "crates/srs-gridder" }
+srs-petro = { path = "crates/srs-petro" }
+srs-wireframe = { path = "crates/srs-wireframe" }
+# srs-data: the petekio→wireframe ingest adapter (carries petekio's neutral
+# Distribution DTO; the DTO→sampler mapping lives downstream in petekSim/srs-core).
+srs-data = { path = "crates/srs-data" }
+# srs-volumetrics + srs-uncertainty: relocated from petekSim 2026-07-03 (last
+# petekSim SHA fe6343c) per graph `decision_layer_charters` — GRV/in-place +
+# Monte Carlo over static-model realizations now live in the GEOMODEL layer.
+srs-volumetrics = { path = "crates/srs-volumetrics" }
+srs-uncertainty = { path = "crates/srs-uncertainty" }
+# srs-spill: the out-of-core backing-storage mode (memory budget + k-slab spill),
+# extracted from srs-model 2026-07-05 (organize wave P10). A leaf crate below the
+# model aggregate — srs-model re-exports its surface so the public path is unchanged.
+srs-spill = { path = "crates/srs-spill" }
+# srs-model: the top of the DAG — the StaticModel aggregate + the ratified
+# MC-regeneration seam (StaticModelTemplate / RealizationDraw / builder).
+srs-model = { path = "crates/srs-model" }
+# petekTools (pure-leaf toolkit, downstream DAG edge): home of the domain-agnostic
+# gridding kernels (ConvergentGridder / warm-start), units, and pproj container.
+# PRE-RELEASE FAMILY MODE (SI migration, decision_si_units_standard): path dep on
+# ../petekTools HEAD — Wave C needs its HEAD units surface. The publish batch
+# swaps this back to the crates.io registry version (was `petektools = "0.1"`).
+petektools = { path = "../petekTools" }
+# petekio (DATA layer): the upstream input-data crate. Its `GeoError` composes
+# into `StaticError` via `#[from]` so `?` chains DATA→GEOMODEL at the seam.
+# PRE-RELEASE FAMILY MODE (SI migration): path dep on ../petekIO HEAD — the
+# migration depends on petekio HEAD's negative-down elevation z-convention
+# (xyz() = subsea elevation, 0.3.0 window). The publish batch swaps this back to
+# the registry version (was `petekio = "0.2.1"`).
+petekio = { path = "../petekIO" }
+thiserror = "2"
+# Config-layer serde (task_petekstatic_spec_mirror, testing doctrine R7): the
+# declarative build/MC config values (HorizonStack family, BuildSpec, McSettings,
+# draws, …) round-trip as scenario files; the derives live on the value types
+# across the config crates (srs-wireframe / srs-gridder / srs-volumetrics / srs-model).
+serde = { version = "1", features = ["derive"] }
+
+# Warnings are errors (CLAUDE.md gate). Applied per-crate via `[lints] workspace = true`.
+[workspace.lints.rust]
+unused = { level = "deny", priority = -1 }
+dead_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[profile.release]
+lto = true
+codegen-units = 1

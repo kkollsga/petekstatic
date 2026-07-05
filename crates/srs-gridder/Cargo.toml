@@ -1,0 +1,38 @@
+[package]
+name = "srs-gridder"
+description = "Convergent gridder (box degenerate case + full convergence)"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+petekstatic-error.workspace = true
+# Config-layer serde (R7): SolveOpts / Conformity / ExtrapolationPolicy ride
+# inside serializable build configs (BuildOpts / BuildSpec / HorizonStack).
+serde.workspace = true
+srs-grid.workspace = true
+# petektools (crates.io 0.1): warm-start kernel behind the seeded refine path
+# (`solve_surface_seeded` → `grid_min_curvature_seeded`). The cold `solve_surface`
+# stays local — its linear-extrapolation boundary reproduces regional dip exactly,
+# which petektools' edge-harmonic kernel does not (see the seeded-path caveat).
+petektools.workspace = true
+# The seed field handed to petektools' seeded kernel is an ndarray Array2;
+# pinned to petektools' ndarray (0.17) so the type matches at the seam.
+ndarray = "0.17"
+
+[dev-dependencies]
+criterion = "0.5"
+# Property-based degenerate-input testing of the layering/collapse/order-repair
+# kernels (testing doctrine R5): random column profiles (zero / sub-threshold /
+# inverted / NaN thickness, single-cell + single-layer grids). Bounded case counts
+# for CI speed; convergence loops carry a hard per-case timeout so a livelock FAILS.
+proptest = "1"
+
+[[bench]]
+name = "surface"
+harness = false

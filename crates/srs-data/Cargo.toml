@@ -1,0 +1,20 @@
+[package]
+name = "srs-data"
+description = "Thin petekio adapter: map model-ready ModelInputs -> srs input types + constraining wireframe (no data processing)"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+petekstatic-error = { workspace = true }
+petektools = { workspace = true }
+srs-wireframe = { workspace = true }
+petekio.workspace = true
+
+[dev-dependencies]
+srs-petro = { workspace = true }

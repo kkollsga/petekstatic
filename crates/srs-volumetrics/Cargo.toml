@@ -1,0 +1,18 @@
+[package]
+name = "srs-volumetrics"
+description = "GRV, in-place volumetrics (OOIP/OGIP) and FVF from the populated grid"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+petekstatic-error.workspace = true
+# Config-layer serde (R7): ConstantPriors rides inside serializable build configs.
+serde.workspace = true
+petektools.workspace = true
+srs-grid.workspace = true

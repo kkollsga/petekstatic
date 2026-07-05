@@ -1,0 +1,19 @@
+[package]
+name = "petekstatic-error"
+description = "The petekStatic workspace error type (StaticError). petekStatic's single error enum, composed at seams via #[from]."
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+# petekio's GeoError composes into StaticError via #[from] (DATA→GEOMODEL seam).
+petekio.workspace = true
+# petekTools' AlgoError composes into StaticError via #[from] (TOOLKIT→GEOMODEL
+# seam) so `?` chains the horizontal toolkit's sampling/stats failures.
+petektools.workspace = true

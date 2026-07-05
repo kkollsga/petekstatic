@@ -1,0 +1,16 @@
+[package]
+name = "srs-wireframe"
+description = "The constraining wireframe (boundary + horizons + contacts) assembled from model-ready inputs and consumed by the convergent gridder."
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Config-layer serde (R7): the wireframe value types (GriddedDepth / Contact /
+# ContactKind / Hardness) ride inside serializable build configs (HorizonStack).
+serde.workspace = true

@@ -1,0 +1,42 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+# Library crate — do not commit the lockfile; let downstreams pin.
+Cargo.lock
+
+# Python / PyO3 (py feature, maturin)
+__pycache__/
+*.so
+*.pyd
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local dev working folder — see dev-docs/README.md for the canonical layout.
+# Durable dirs (plans/, designs/, bench/scripts/, bench/results/, todos.md) +
+# time-boxed dirs auto-purged by the dev-docs-cleanup skill: temp/ (>1d, offload
+# large output here to dodge the response token gate), bench/out/ (>14d, heavy
+# generated artifacts), bin/ (>7d, soft-deleted docs). All local, never committed.
+/dev-docs/
+
+# Cross-project coordination channel — see inbox/README.md. unread/ + read/,
+# operated by the read-inbox / notify skills. Local working state, never committed.
+/inbox/
+
+# Local Claude Code tooling (skills/config) — working state, never committed
+# (matches the petekTools/petekSim convention).
+/.claude/
+
+# OS noise
+.DS_Store
+
+# Python build artifacts
+/dist/
+*.whl
+
+# MkDocs build output
+/site/
+
+# Local coordinator-graph MCP config (machine-specific absolute path)
+/.mcp.json

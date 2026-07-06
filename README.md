@@ -39,7 +39,7 @@ petekTools   TOOLKIT    → gridding/kriging/warm-start kernels + units + pproj 
 
 ## Status — built and green
 
-A single crate, `petekstatic` (0.1.1), whose modules preserve the historical
+A single crate, `petekstatic` (0.1.2), whose modules preserve the historical
 layer boundaries and one-directional imports: `petekstatic::{error, wireframe,
 grid, petro, gridder, volumetrics, uncertainty, data, spill, model}` — with the
 top-of-DAG `model` surface (the `StaticModel` aggregate + the ratified

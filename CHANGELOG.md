@@ -6,6 +6,8 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-06
+
 ### Changed
 - Rebuilt the petekStatic example notebooks around the ratified role-binding
   flow: synthetic project trees now come from `petektools.synth_asset`, synthetic

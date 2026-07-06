@@ -6,8 +6,9 @@
 > This file is the contract: changing a cross-library signature (the StaticModel
 > accessors, `RealizationDraw`, the regeneration API) requires coordinator +
 > consumer sign-off; library-internal signatures are petekStatic's own call. The
-> file locks fully at the 0.1 release. Rust is canonical; Python access today is
-> via petekSim's `peteksim` facade.
+> file locks fully at the 0.1 release. Rust is canonical. Python has a minimal
+> `petekstatic` wheel for the compact flat-model surface; the rich project-build
+> workflow is reached through petekSim's `peteksim` facade.
 
 Conventions (house style): `Result<T> = std::result::Result<T, StaticError>`;
 per-cell cubes are `Vec<f64>` indexed by linear cell index; `NaN` = undefined;
@@ -1094,9 +1095,20 @@ flatten of `shape`.
 
 ## Python surface
 
-Python access is via petekSim's **`peteksim`** facade (the product layer), whose
-`run_box_model` / `Model` surfaces stayed intact across the relocation. A
-petekStatic-side PyO3 mirror remains planned (post-0.1).
+The `petekstatic` wheel intentionally exposes a small locked surface:
+
+```python
+petekstatic.__all__ == ["StaticModel", "__version__", "build_flat_model"]
+```
+
+`build_flat_model` returns a single-zone `StaticModel` suitable for smoke tests,
+volume reads, and bundle reads. Multi-horizon project loading, inventory
+inspection, role binding (`outline`, ordered horizons, zones/subzones, contacts),
+property population, contact scenarios, bundles, and MC are presented in Python
+through petekSim's **`peteksim`** facade. The example notebooks use
+`petektools.synth_asset` only to create a synthetic project tree; real exports use
+the same `peteksim.Project.load` flow after swapping the project path and role
+literal names.
 
 ---
 

@@ -11,15 +11,14 @@ This is a guide, not a reference: it walks the geomodel workflow end to end and
 points at the two runnable notebooks in `examples/notebooks/`. For exact
 signatures see `API.md`; for the design constitution see `SPEC.md`.
 
-> **Python surface today.** petekStatic is a Rust workspace. A minimal own wheel
-> (`petekstatic`, exposing `build_flat_model` → a single-zone `StaticModel` you
-> can read volumes and view-bundles off) is landing, but the **rich geomodel
-> workflow** — scatter-conditioned horizon stacks, multi-zone volumes, contact
-> scenarios — is driven through the **`peteksim` facade**, which *is* petekStatic's
-> engine (petekSim sits directly below petekStatic's crates in the DAG and re-
-> exports them). Both example notebooks use the `peteksim` facade for that reason,
-> and say so in their first cell. The Rust API is canonical; the facade only
-> marshals across the Python boundary.
+> **Python surface today.** petekStatic has a minimal own wheel (`petekstatic`,
+> exposing `StaticModel`, `build_flat_model`, and `__version__`) for the compact
+> single-zone API. The **rich geomodel workflow** — project inventory, explicit
+> role binding, scatter-conditioned horizon stacks, multi-zone volumes, contact
+> scenarios, bundles, and MC — is driven through the **`peteksim` facade**, which
+> presents petekStatic's engine to Python. Synthetic project trees come from the
+> horizontal `petektools.synth_asset` unit; the notebooks treat that as a source
+> of example input, not as petekStatic functionality.
 
 ## Where petekStatic sits
 
@@ -118,17 +117,26 @@ API) requires coordinator + consumer sign-off — the seam is a contract.
 
 ## The example notebooks
 
-Both live in `examples/notebooks/` and are executed end to end on synthetic data
-(no external inputs). Run them with a Python that has `peteksim` installed.
+Both live in `examples/notebooks/`. They can be executed end to end on the
+synthetic project tree produced by `petektools.synth_asset`, or pointed at a
+user export by changing the data-source cell and replacing the visible role
+literals with names from `Project.inventory()`. Each notebook keeps synthetic
+generation, `Project.load`/inventory inspection, and the main modelling workflow
+in separate cells so the swap point is obvious. Run them with a Python that has
+`petektools` and `peteksim` installed.
 
-- **`01_stack_model_from_scatter.ipynb`** — build a multi-zone stack model from
-  synthetic **scatter** (surfaces-as-points → the `from_scatter` conditioning
-  path), read **per-zone volumes** (`in_place_by_zone`), and plot a per-zone
-  STOIIP bar chart.
+- **`01_stack_model_from_scatter.ipynb`** — load a project tree, print
+  `Project.inventory()` before binding, declare user-replaceable literals for
+  `outline="ModelEdge"`, ordered horizons, zones/subzones, contacts, and
+  properties, then build a multi-zone stack model through the `peteksim` facade
+  and read **per-zone volumes** (`in_place_by_zone`). Synthetic manifest checks
+  are isolated in the final cell and skipped for real-data paths.
 - **`02_volumes_and_bundles.ipynb`** — a per-zone GRV / in-place table, a
   **contact scenario** (replace a zone's OWC with a deeper one → more oil in that
-  zone), and a **bundle** peek (`volume_bundle` / `map_bundle` keys + a small
-  areal PORO map raster rendered from the map bundle's frame).
+  zone), a **bundle** peek (`volume_bundle` / `map_bundle` keys), and the current
+  segment convention: run one model/MC per segment and combine segment
+  realization sets with `ps.aggregate`; do not build a zone-by-segment
+  single-model rollup in petekStatic.
 
 ## Conventions
 

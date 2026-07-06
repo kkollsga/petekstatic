@@ -6,6 +6,20 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+### Changed
+- Rebuilt the petekStatic example notebooks around the ratified role-binding
+  flow: synthetic project trees now come from `petektools.synth_asset`, synthetic
+  generation and `Project.load` live in separate cells, the notebooks print
+  `Project.inventory()` before binding, declare replaceable literals for
+  outline/horizons/zones/subzones/contacts, build through the `peteksim` facade,
+  and keep synthetic manifest checks in final skipped-for-real cells. Notebook 02
+  now documents the current per-segment run + `ps.aggregate` pattern instead of
+  implying a zone-by-segment single-model rollup.
+
+### Added
+- Locked the Python wheel export surface with a test asserting
+  `petekstatic.__all__ == ["StaticModel", "__version__", "build_flat_model"]`.
+
 ## [0.1.1] - 2026-07-06
 
 ### Fixed

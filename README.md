@@ -37,15 +37,15 @@ petekSim     SIMULATION → dynamic/engineering + the Python product        [dow
 petekTools   TOOLKIT    → gridding/kriging/warm-start kernels + units + pproj  [horizontal]
 ```
 
-## Status — built and green (pre-0.1)
+## Status — built and green
 
-A single crate, `petekstatic` (0.1.0), whose modules preserve the historical
+A single crate, `petekstatic` (0.1.1), whose modules preserve the historical
 layer boundaries and one-directional imports: `petekstatic::{error, wireframe,
 grid, petro, gridder, volumetrics, uncertainty, data, spill, model}` — with the
 top-of-DAG `model` surface (the `StaticModel` aggregate + the ratified
 MC-regeneration seam) re-exported at the crate root. Consolidated from the
-former ten-crate workspace on 2026-07-05 (owner ruling; the `srs-*` and
-`petekstatic-error` crates are deprecated). The volumetrics/uncertainty code
+former ten-crate workspace on 2026-07-05 (owner ruling; the former `srs-*` and
+`petekstatic-error` package names are retired). The volumetrics/uncertainty code
 relocated here from petekSim on 2026-07-03 (the layer-charter re-scope). Design
 constitution: `SPEC.md`; public contract: `API.md`. Working folders:
 `dev-docs/README.md`, `inbox/README.md`.

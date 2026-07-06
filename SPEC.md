@@ -1,7 +1,7 @@
 # petekStatic — design constitution (build spec)
 
-> Repo: `Koding/Rust/petekSuite/petekStatic` · crate family: `srs-*` +
-> `petekstatic-error`. The **GEOMODEL** layer of the petek subsurface-modelling
+> Repo: `Koding/Rust/petekSuite/petekStatic` · crate: `petekstatic`
+> (modules preserve the historical `srs-*` layer labels). The **GEOMODEL** layer of the petek subsurface-modelling
 > ecosystem. This is the design constitution (the *why*/*how*); the locked public
 > contract is `API.md`; the shared conventions are the petek family house style
 > (`petekSuite/dev-docs/petek-house-style.md`). Cross-library seams + lifecycle
@@ -30,10 +30,11 @@ on petekSim (our downstream consumer).
 
 ## 1. Design constitution (this library's slice of the family house style)
 
-1. **Strictly layered, one-way internal deps; no cycles.** The current crate DAG:
+1. **Strictly layered, one-way internal deps; no cycles.** The current module DAG
+   inside the single `petekstatic` crate:
 
    ```
-   petekstatic-error         # the one workspace error enum (StaticError) + Result
+   error                     # the one workspace error enum (StaticError) + Result
    srs-grid                  # i,j,k corner-point grid: Grid/Cell/KLayer/Property
    srs-wireframe             # the constraining wireframe (boundary+horizons+contacts)
    srs-gridder               # convergent gridder: min-curvature surface + layering
@@ -47,7 +48,7 @@ on petekSim (our downstream consumer).
                              #   the MC-regeneration template (relocated from petekSim)
    ```
 
-   A crate imports only from crates above it. `srs-volumetrics` and
+   A module imports only from layers above it. `srs-volumetrics` and
    `srs-uncertainty` **relocated here from petekSim 2026-07-03** (origin SHA
    `fe6343c`, `task_relocate_refine_orchestration`) under the layer-charter
    re-scope; `srs-spill` **split out of `srs-model` 2026-07-05**
@@ -59,7 +60,7 @@ on petekSim (our downstream consumer).
 
 2. **One error enum** (`StaticError`, `thiserror`) + `Result<T>` everywhere;
    downstream composes it with a `#[from]` variant on its own enum (house §1).
-   petekSim does this: `SrsError::Static(#[from] petekstatic_error::StaticError)`.
+   petekSim does this: `SrsError::Static(#[from] petekstatic::error::StaticError)`.
    Upstream composes IN the same way: `StaticError::Geo(#[from] petekio::GeoError)`
    — so `?` chains DATA→GEOMODEL→SIM and `source()` reaches the origin.
 
@@ -776,7 +777,7 @@ Open: kernel unification (`decision_gridder_kernel_unification` /
 
 ## 9. What exists today vs planned
 
-**Exists (green):** `petekstatic-error` (`StaticError` + `#[from] GeoError`),
+**Exists (green):** `error` (`StaticError` + `#[from] GeoError`),
 `srs-grid`, `srs-gridder` (`solve_surface`, `solve_surface_seeded` +
 `KernelSurface`, `layer_grid`), `srs-petro`, `srs-wireframe`, `srs-data`,
 `srs-volumetrics` (in-place + FVF types + range validation), `srs-uncertainty`

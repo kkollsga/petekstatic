@@ -17,7 +17,7 @@ the `srs-data` ingest boundary).
 
 ---
 
-## `petekstatic-error`
+## `error`
 
 ```rust
 pub enum StaticError {
@@ -30,7 +30,7 @@ pub enum StaticError {
 pub type Result<T> = std::result::Result<T, StaticError>;
 ```
 
-Downstream composes it: `SrsError::Static(#[from] petekstatic_error::StaticError)`
+Downstream composes it: `SrsError::Static(#[from] petekstatic::error::StaticError)`
 (which transitively reaches `GeoError` too).
 
 ## `srs-grid` — the i,j,k corner-point grid

@@ -39,13 +39,14 @@ numeric kernels; it never depends on petekSim (its consumer). No cycles, no
 sideways code-sharing — conventions are shared, small types are converted at the
 seam (e.g. the FVF value types that cross from PVT as validated scalars).
 
-## The nine-crate workspace
+## The single crate, layered by module
 
-petekStatic is a layered Cargo workspace; deps point strictly downward:
+petekStatic now publishes one Cargo crate. The historical `srs-*` crate names
+survive as module/layer labels, and dependencies still point strictly downward:
 
-| crate | responsibility |
+| module/layer | responsibility |
 |---|---|
-| `petekstatic-error` | the one error enum (`StaticError`) + `Result<T>`; chains petekIO's `GeoError` at the ingest seam |
+| `error` | the one error enum (`StaticError`) + `Result<T>`; chains petekIO's `GeoError` at the ingest seam |
 | `srs-grid` | the i,j,k corner-point grid: cells, corners, per-cell property cubes, gross rock volume |
 | `srs-gridder` | grid construction — layering + conformity + collapse over the framework |
 | `srs-wireframe` | the structural framework: boundary, horizons, contacts, the `HorizonStack` |

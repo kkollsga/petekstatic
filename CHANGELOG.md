@@ -6,6 +6,22 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-06
+
+### Fixed
+- **Windows wheel + sdist now published.** The 0.1.0 release matrix built only
+  linux (x86_64/aarch64) and macOS (x86_64/arm64) wheels — no `win_amd64` wheel
+  and no sdist, so `pip install petekstatic` failed on Windows ("No matching
+  distribution found"). The release workflow now builds a `windows-latest x64`
+  wheel and an sdist alongside the existing four, and CI gained a permanent
+  Windows build + install + smoke job so a missing release target can never go
+  unnoticed again. No code changes.
+
+## [0.1.0] - 2026-07-05
+
+First public release: the consolidated `petekstatic` crate + the `petekstatic`
+PyPI wheel (abi3-py310).
+
 ### Packaging — CONSOLIDATED the 10-crate workspace into ONE crate, `petekstatic` (owner ruling)
 - **The ten published workspace crates are now a single crate, `petekstatic`
   (0.1.0).** `petekstatic-error`, `srs-grid`, `srs-gridder`, `srs-petro`,

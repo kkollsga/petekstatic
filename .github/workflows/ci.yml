@@ -60,3 +60,33 @@ jobs:
           assert ip["ooip_sm3"] > 0.0
           print("petekstatic ok:", ip["ooip_sm3"])
           PY
+
+  wheel-windows:
+    # Windows release-target tripwire: the 0.1.0 release shipped with NO
+    # win_amd64 wheel and nobody noticed until a user hit it. This job builds
+    # + installs + smokes the wheel on windows-latest so a missing/broken
+    # Windows target fails CI, not a user's `pip install`. One interpreter is
+    # enough (abi3-py310); the smoke, not the full pytest, is the point.
+    name: wheel build + smoke (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install maturin
+        run: pip install maturin
+      - name: build release wheel
+        run: maturin build --release --out dist
+      - name: install wheel
+        run: pip install --find-links dist --no-index petekstatic
+      - name: import + build_flat_model smoke
+        shell: python
+        run: |
+          import petekstatic
+          m = petekstatic.build_flat_model()
+          ip = m.in_place(boi=1.25)
+          assert ip["ooip_sm3"] > 0.0
+          print("petekstatic ok on windows:", ip["ooip_sm3"])

@@ -15,6 +15,9 @@ All notable changes to petekStatic are recorded here. Format follows
   and keep synthetic manifest checks in final skipped-for-real cells. Notebook 02
   now documents the current per-segment run + `ps.aggregate` pattern instead of
   implying a zone-by-segment single-model rollup.
+- Fast-pathed synthetic flat-box builds through the kernel-owned flat fixed point,
+  restoring the ignored release forced-spill budget without bypassing the general
+  solve for user-added structural controls.
 
 ### Added
 - Locked the Python wheel export surface with a test asserting

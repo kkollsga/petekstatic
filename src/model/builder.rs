@@ -851,8 +851,12 @@ impl StaticModelBuilder {
         let nx = self.ni + 1;
         let ny = self.nj + 1;
         // Structural solve in petekTools kernel space (the SAME path the template
-        // uses), so the two builds never diverge by kernel (R2).
-        let top_k = warm_surface(nx, ny, &self.controls)?;
+        // uses), so the two builds never diverge by kernel (R2). The synthetic
+        // flat-box builder starts from four identical corner controls; that case is
+        // already a kernel fixed point and can enter through the kernel-owned flat
+        // constructor instead of paying the general sparse-control solve.
+        let top_k = flat_corner_surface(nx, ny, &self.controls)
+            .unwrap_or_else(|| warm_surface(nx, ny, &self.controls))?;
         let top = top_k.surface();
         // Base follows a supplied `Base` horizon's real relief if present;
         // otherwise it is the conformable constant `gross_height_m` offset (the
@@ -2301,6 +2305,31 @@ pub(crate) fn warm_surface(
     // preserved — the entry composes `solve_surface_seeded` with exact
     // fixed-point (plane) arithmetic.
     crate::gridder::solve_surface_converged(nx, ny, controls)
+}
+
+fn flat_corner_surface(
+    nx: usize,
+    ny: usize,
+    controls: &[Control],
+) -> Option<Result<KernelSurface, StaticError>> {
+    if controls.len() != 4 {
+        return None;
+    }
+    let z = controls[0].z;
+    if !z.is_finite() || controls.iter().any(|c| c.z != z) {
+        return None;
+    }
+    let max_i = nx.checked_sub(1)?;
+    let max_j = ny.checked_sub(1)?;
+    let corners = [(0, 0), (max_i, 0), (0, max_j), (max_i, max_j)];
+    if corners
+        .iter()
+        .all(|&(ip, jp)| controls.iter().any(|c| c.ip == ip && c.jp == jp))
+    {
+        Some(Ok(KernelSurface::flat(nx, ny, z)))
+    } else {
+        None
+    }
 }
 
 /// The structural skeleton a builder/template extracts off a wireframe.

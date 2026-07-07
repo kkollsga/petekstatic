@@ -6,6 +6,13 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-07-07
+
+### Changed
+- Updated the Rust and Python dependency floor to `petekio` 0.3.4 so
+  petekStatic consumes the released point-set geometry/edge API from the DATA
+  layer.
+
 ## [0.1.6] - 2026-07-07
 
 ### Added

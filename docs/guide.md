@@ -11,14 +11,18 @@ This is a guide, not a reference: it walks the geomodel workflow end to end and
 points at the two runnable notebooks in `examples/notebooks/`. For exact
 signatures see `API.md`; for the design constitution see `SPEC.md`.
 
-> **Python surface today.** petekStatic has a minimal own wheel (`petekstatic`,
-> exposing `StaticModel`, `build_flat_model`, and `__version__`) for the compact
-> single-zone API. The **rich geomodel workflow** — project inventory, explicit
-> role binding, scatter-conditioned horizon stacks, multi-zone volumes, contact
-> scenarios, bundles, and MC — is driven through the **`peteksim` facade**, which
-> presents petekStatic's engine to Python. Synthetic project trees come from the
-> horizontal `petektools.synth_asset` unit; the notebooks treat that as a source
-> of example input, not as petekStatic functionality.
+> **Python surface today.** petekStatic exposes the compact Rust-backed
+> `StaticModel`/`build_flat_model` surface and the first own Python workflow
+> facade: `Grid.from_project(...).geometry(...).horizons(...).zones(...).layers(...)`,
+> `grid.properties.calc(...)`, `upscale(...).sgs(...)` property recipes, and
+> `grid.volumes(...).run(...)`. The workflow facade is a declarative/spec layer
+> for notebooks and smoke tests: it validates project asset names, stores
+> property arrays in memory, delegates formula blocks to
+> `petektools.evaluate_formula`, lowers property recipes to
+> `PropertyPipelineSpec`, and returns deterministic simple volumes. It does
+> **not** yet replace the production Rust corner-point grid build, bundles,
+> contact scenarios, or MC paths that are still surfaced through the `peteksim`
+> facade while the lift continues.
 
 ## Where petekStatic sits
 
@@ -58,6 +62,83 @@ survive as module/layer labels, and dependencies still point strictly downward:
 
 ## The workflow, layer by layer
 
+### Python declaration slice
+
+```python
+import petekstatic as pst
+
+grid = (
+    pst.Grid.from_project(project)
+    .geometry(cell=(50.0, 50.0), orient=0.0, outline="ModelEdge")
+    .horizons(
+        ["Top reservoir", "Base reservoir"],
+        tie_to_tops=True,
+        gridding=pst.Gridding(collapse_thin=True),
+    )
+    .zones({"Reservoir": ("Top reservoir", "Base reservoir")})
+    .layers({"Reservoir": pst.Layering(n=4)})
+)
+
+p = grid.properties
+p.ntg = 0.80
+p.por = p.ntg * 0.85
+p.sw = 0.20
+p["PermXY_BC"].set(100.0)
+p["PorE_BC"].set(0.25)
+p["HA_FWL"].set(1.0)
+p["Jfunc"].set(1.0)
+p.calc([
+    "RQI = $lambda * sqrt(PermXY_BC / PorE_BC)",
+    "Swirr = $SHF_c * pow(RQI, $SHF_d)",
+    "Sw = if(HA_FWL == 0, 1, Swirr + (1 - Swirr) * $SHF_a * pow(Jfunc, $SHF_b))",
+], params={...})
+
+result = grid.volumes(ntg="NTG", por="POR", sw="Sw", fluid="oil", fvf=1.30).run(progress=True)
+```
+
+`progress=True` prints coarse stages; passing a callback receives event
+dictionaries. `VolumeResult.summary()` returns total GRV/HCPV/in-place numbers
+and `VolumeResult.by_zone()` returns the current zone dictionary.
+
+Property recipes are declared the same way, but they produce a lowered pipeline
+spec instead of an in-memory property vector:
+
+```python
+logs = project.logs
+vgm = pst.Var("spherical", major=1500, minor=700, vertical=20, azimuth=35)
+
+p.por = pst.upscale(logs.PHIE(logs.NetSand > 0.50)).sgs(
+    variogram=vgm,
+    distribution=pst.distributions.from_logs(),
+    seed=12,
+)
+
+declared = p.declarations("por")
+lowered = p.pipelines("por")
+```
+
+When the project or log source can resolve positioned wells, an isotropic recipe
+can build a Rust-backed `pst.PropertyPipeline` handle:
+
+```python
+iso = pst.Var("spherical", major=1500, minor=1500, vertical=1500, azimuth=0)
+p.ntg = pst.upscale(logs.NetSand).sgs(
+    variogram=iso,
+    distribution=pst.distributions.from_logs(),
+    seed=11,
+)
+
+pipe = p.execute_pipeline("ntg")
+smoke_model = pipe.apply_to_flat_model()
+```
+
+That execution is intentionally narrow today: unresolved lazy logs,
+cokriging/trend binding, non-`from_logs` distributions, and anisotropic Rust
+execution raise explicit errors. Anisotropic `pst.Var(...)` specs are preserved
+in the serialized recipe and can still lower to petekTools' anisotropic variogram
+object; arbitrary-grid pipeline application is not exposed through Python yet.
+Use `PropertyPipeline.apply_to_flat_model(...)` only as the current smoke path.
+
 ### 1. Structural framework — horizons + zones
 
 The framework is a stack of depth **horizons** bounding **zones** (one zone per
@@ -77,13 +158,13 @@ The scatter path (`from_scatter_stack`) is the *single scatter-gridding authorit
 and then resolves exactly as the gridded-stack path, so a model and its MC
 template are built from bit-identical geometry.
 
-### 3. Property modelling — priors and upscaling
+### 3. Property modelling — priors, formulas, and upscaling
 
-`srs-petro` populates the per-cell cubes. Today: constant/day-1 **priors** and
-**log upscaling**; geostatistical population (facies, variogram-driven
-propagation, trends) is the growth path. A property can be **net-only**
-(populated only where net-to-gross qualifies), and each property carries its own
-variogram + seed so a run is deterministic and reproducible.
+`srs-petro` populates the per-cell cubes. Today: constant/day-1 **priors**,
+Python-side formula assignment, and **log upscaling** lowered toward the Rust
+`PropertyPipeline`. A property can be **net-only** (populated only where
+net-to-gross qualifies), and each recipe carries its own variogram + seed so a
+run is deterministic and reproducible.
 
 ### 4. Volumetrics — GRV and in-place, per zone
 
@@ -123,8 +204,9 @@ synthetic project tree produced by `petektools.synth_asset`, or pointed at a
 user export by changing the data-source cell and replacing the visible role
 literals with names from `Project.inventory()`. Each notebook keeps synthetic
 generation, `Project.load`/inventory inspection, and the main modelling workflow
-in separate cells so the swap point is obvious. Run them with a Python that has
-`petektools` and `peteksim` installed.
+in separate cells so the swap point is obvious. Run the petekStatic workflow
+slice with `petekio`, `petektools`, and `petekstatic`; the older product-facing
+notebooks also need `peteksim` until their final build cells are fully lowered.
 
 - **`01_stack_model_from_scatter.ipynb`** — load a project tree, print
   `Project.inventory()` before binding, declare user-replaceable literals for

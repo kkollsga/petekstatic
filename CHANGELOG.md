@@ -6,6 +6,36 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-07
+
+### Added
+- Added the first petekStatic-owned Python static workflow facade:
+  `Grid.from_project(...).geometry(...).horizons(...).zones(...).layers(...)`,
+  `Gridding`, `Layering`, `Spherical`, property handles/store, scalar and
+  expression assignment, `calc(...)`, and `volumes(...).run(...)` with
+  `VolumeResult.summary()` / `by_zone()`.
+- `grid.properties.calc(...)` delegates formula blocks to
+  `petektools.evaluate_formula` and commits calculated properties atomically after
+  the block validates.
+- Added canonical property recipe declarations:
+  `pst.upscale(logs.PHIE(logs.NetSand > 0.50)).sgs(...)`,
+  `pst.Var(...)`, `pst.distributions.from_logs()`, `WellLogSpec`, and
+  `PropertyPipelineSpec` lowering/inspection/execution examples.
+- Added the first Python execution boundary for property recipes: lowered specs
+  with resolved positioned wells, `from_logs` distribution, no trend/cokriging,
+  and isotropic variograms can build a Rust-backed `PropertyPipeline`; arbitrary
+  production-grid application remains unexposed except for the flat-model smoke
+  path.
+- Added synthetic Python tests for project asset validation, formula-backed
+  calculated properties, progress callbacks, deterministic simple volumes,
+  property recipe serialization/lowering, petekTools anisotropic variogram
+  lowering, and Rust pipeline handle construction.
+
+### Notes
+- The workflow is currently a Python facade/spec layer for notebooks and smoke
+  tests. It does not yet lower into the full Rust `StaticModelBuilder` or execute
+  production corner-point geometry/property modelling against arbitrary grids.
+
 ## [0.1.2] - 2026-07-06
 
 ### Changed

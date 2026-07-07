@@ -39,7 +39,7 @@ use crate::model::model::Georef;
 use crate::model::trend::TrendSurface;
 use crate::petro::{arithmetic_mean, geometric_mean, harmonic_mean, WeightedSample};
 use petektools::geostat::{sgs_seeded, SgsParams};
-use petektools::{Lattice, Variogram};
+use petektools::{Lattice, SpatialVariogram};
 use rayon::prelude::*;
 
 /// The golden-ratio odd constant used to derive an independent, reproducible SGS
@@ -137,7 +137,7 @@ impl UpscaleMethod {
 /// internally (`petektools` `NormalScore`), so its total sill need not be 1.
 #[derive(Debug, Clone)]
 pub struct Gaussian {
-    variogram: Variogram,
+    variogram: SpatialVariogram,
     seed: u64,
     /// Moving-neighbourhood `(max_neighbours, radius_m)`; `None` = derive a
     /// **bounded** neighbourhood at propagate time (`DEFAULT_MAX_NEIGHBOURS` + a
@@ -170,9 +170,9 @@ impl Gaussian {
     /// covariance range a conditioning node's kriging weight is ~0, so the bounded
     /// result matches the unbounded one within simulation tolerance.
     #[must_use]
-    pub fn new(variogram: Variogram, seed: u64) -> Self {
+    pub fn new(variogram: impl Into<SpatialVariogram>, seed: u64) -> Self {
         Self {
-            variogram,
+            variogram: variogram.into(),
             seed,
             search: None,
             trend: None,
@@ -597,6 +597,13 @@ fn propagate_sgs(
     Ok(base)
 }
 
+fn gaussian_search_range(g: &Gaussian) -> f64 {
+    match g.variogram {
+        SpatialVariogram::Isotropic(v) => v.range,
+        SpatialVariogram::Anisotropic(v) => v.major.max(v.minor).max(v.vertical),
+    }
+}
+
 /// Per-layer SGS over `k_range` only, writing into `base` (the cube already on the
 /// grid) — the per-zone population core. Only layers in `k_range` are simulated and
 /// overwritten; layers outside it keep their `base` value. The seed derivation is
@@ -659,7 +666,7 @@ fn propagate_sgs_into(
             let extent = ((ni as f64) * lattice.xinc).hypot((nj as f64) * lattice.yinc);
             (DEFAULT_MAX_NEIGHBOURS, extent.max(spacing))
         } else {
-            let radius = (g.variogram.range * 1.5).max(spacing * 4.0);
+            let radius = (gaussian_search_range(g) * 1.5).max(spacing * 4.0);
             (DEFAULT_MAX_NEIGHBOURS, radius)
         }
     });
@@ -807,7 +814,7 @@ fn upscale_qc(property: &str, cells: &[f64], log_values: &[f64]) -> UpscaleQc {
 mod tests {
     use super::*;
     use crate::grid::{build_box, BoxSpec, Dims};
-    use petektools::VariogramModel;
+    use petektools::{AnisotropicVariogram, Variogram, VariogramModel};
 
     const NI: usize = 5;
     const NJ: usize = 5;
@@ -914,6 +921,25 @@ mod tests {
             );
             assert!((prop.values[idx(4, 4, k)] - hi).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn sgs_propagation_accepts_anisotropic_variogram() {
+        let mut grid = test_grid();
+        let vgm =
+            AnisotropicVariogram::new(VariogramModel::Spherical, 0.0, 1.0, 80.0, 30.0, 10.0, 35.0)
+                .unwrap();
+        let pipe = PropertyPipeline::new("PHIE")
+            .upscale(two_wells(), UpscaleMethod::Arithmetic)
+            .propagate(Gaussian::new(vgm, 3));
+
+        let report = pipe.apply(&mut grid).unwrap();
+        let prop = grid.properties().get("PHIE").unwrap();
+
+        assert!(report.propagated);
+        assert!(prop.values.iter().all(|v| v.is_finite()));
+        assert!((prop.values[idx(0, 0, 0)] - 0.10).abs() < 1e-6);
+        assert!((prop.values[idx(4, 4, 0)] - 0.28).abs() < 1e-6);
     }
 
     #[test]

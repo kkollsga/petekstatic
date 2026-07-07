@@ -6,14 +6,152 @@
 > This file is the contract: changing a cross-library signature (the StaticModel
 > accessors, `RealizationDraw`, the regeneration API) requires coordinator +
 > consumer sign-off; library-internal signatures are petekStatic's own call. The
-> file locks fully at the 0.1 release. Rust is canonical. Python has a minimal
-> `petekstatic` wheel for the compact flat-model surface; the rich project-build
-> workflow is reached through petekSim's `peteksim` facade.
+> file locks fully at the 0.1 release. Rust is canonical. Python exposes both
+> the compact flat-model surface and the first petekStatic-owned static workflow
+> facade (`Grid.from_project(...).geometry(...).horizons(...).zones(...).layers(...)`).
+> The workflow facade is currently a declarative/spec layer with in-memory
+> property arrays, petekTools formula evaluation, deterministic simple
+> volumetrics, and lowering of `upscale(...).sgs(...)` property declarations to
+> `PropertyPipelineSpec`; it is not yet the full Rust corner-point grid
+> construction path.
 
 Conventions (house style): `Result<T> = std::result::Result<T, StaticError>`;
 per-cell cubes are `Vec<f64>` indexed by linear cell index; `NaN` = undefined;
 depths are metres, positive-down (petekIO's negative-down elevation is flipped at
 the `srs-data` ingest boundary).
+
+---
+
+## Python workflow facade — first vertical slice
+
+```python
+import petekstatic as pst
+
+grid = (
+    pst.Grid.from_project(project)
+    .geometry(cell=(50.0, 50.0), orient=0.0, outline="ModelEdge")
+    .horizons(
+        ["Top reservoir", "Base reservoir"],
+        tie_to_tops=True,
+        gridding=pst.Gridding(collapse_thin=True),
+    )
+    .zones({"Reservoir": ("Top reservoir", "Base reservoir")})
+    .layers({"Reservoir": pst.Layering(n=4)})
+)
+
+p = grid.properties
+p.ntg = 0.80
+p.por = p.ntg * 0.85
+p.sw = 0.20
+p["PermXY_BC"].set(100.0)
+p["PorE_BC"].set(0.25)
+p.calc(
+    ["RQI = $lambda * sqrt(PermXY_BC / PorE_BC)"],
+    params={"lambda": 0.0314},
+)
+
+case = grid.volumes(ntg="NTG", por="POR", sw="Sw", fluid="oil", fvf=1.30)
+result = case.run(progress=True)
+```
+
+Exported Python names:
+
+```python
+Grid, Gridding, Layering, Spherical,
+PropertyStore, PropertyHandle, PropertyPipelineSpec,
+Var, WellLogSpec, DistributionSpec, CoKriging,
+UpscaleRecipeBuilder, SgsRecipe, distributions, upscale,
+WellLog, PropertyPipeline, VolumeCase, VolumeResult,
+StaticModel, build_flat_model, __version__
+```
+
+Current behavior:
+- `Grid.from_project(project)` accepts the petekIO `Project` facade or a
+  project-like fixture.
+- `geometry(..., outline=...)` and `horizons([...])` validate names against
+  `Project.inventory()` and mapping-like project collections. Missing assets
+  raise `ValueError` with available names.
+- `grid.properties` stores dense in-memory property vectors. Handles are
+  available as `p["NAME"]` and convenience attributes like `p.ntg`, `p.por`,
+  `p.sw`. Constants can be written as scalars (`p.ntg = 0.8` or
+  `p.ntg.set(0.8)`) and are broadcast to the declared cell count; pass an
+  iterable when assigning explicit per-cell values. Property handles also
+  compose into assignment expressions (`p.por = p.ntg * 0.85`), routed through
+  the same formula evaluator as `p.calc(...)`.
+- `p.calc([...], params={...})` delegates the whole formula block to
+  `petektools.evaluate_formula` and writes outputs only after the block succeeds.
+- `pst.Var(model, major, minor, vertical, azimuth, sill=None, nugget=None)`
+  records the canonical anisotropic variogram spec. `pst.Spherical(range_m)` is
+  accepted as isotropic shorthand and converts to `Var`.
+- `pst.distributions.from_logs()` records that the SGS target distribution is
+  estimated from the resolved log samples. It is also the default for log-channel
+  sources when no distribution is supplied.
+- Assigning an `pst.upscale(source).sgs(...)` recipe, for example
+  `p.por = pst.upscale(logs.PHIE(logs.NetSand > 0.50)).sgs(...)`, records the
+  declaration and lowers it to `PropertyPipelineSpec`. Inspect declarations with
+  `p.declarations("por")`, inspect lowered specs with `p.pipelines("por")`, and
+  access the object with `p.pipeline_spec("por")`.
+- `grid.volumes(...).run(progress=True|callback)` computes deterministic simple
+  GRV/HCPV/in-place volumes from the declared cell size, horizon thickness, layer
+  count, and named `ntg`/`por`/`sw` arrays. `VolumeResult.summary()` and
+  `VolumeResult.by_zone()` return dictionaries.
+
+Property recipe example:
+
+```python
+logs = project.logs
+vgm = pst.Var(
+    "spherical",
+    major=1500,
+    minor=700,
+    vertical=20,
+    azimuth=35,
+    sill=1.2,
+    nugget=0.05,
+)
+
+p.por = pst.upscale(logs.PHIE(logs.NetSand > 0.50)).sgs(
+    variogram=vgm,
+    distribution=pst.distributions.from_logs(),
+    seed=12,
+)
+
+lowered = p.pipelines("por")
+```
+
+Executable recipe example, when `logs.NetSand` or the project resolver returns
+positioned well logs:
+
+```python
+iso = pst.Var("spherical", major=1500, minor=1500, vertical=1500, azimuth=0)
+p.ntg = pst.upscale(logs.NetSand).sgs(
+    variogram=iso,
+    distribution=pst.distributions.from_logs(),
+    seed=11,
+)
+
+pipe = p.execute_pipeline("ntg")
+config = pipe.config()
+smoke_model = pipe.apply_to_flat_model()
+```
+
+Execution boundary:
+- If `source.to_well_logs(project)`, `source.resolve_well_logs(project)`,
+  `project.resolve_log_expression(source)`, `project.resolve_well_logs(source)`,
+  or `project.resolve_log_source(source_dict)` returns positioned logs, the
+  lowered spec stores `WellLogSpec` inputs.
+- `p.execute_pipeline("por")` returns a Rust-backed `pst.PropertyPipeline` handle
+  only when positioned wells are available, no cokriging/trend is bound,
+  `distribution=pst.distributions.from_logs()`, and the variogram is isotropic
+  for current Rust execution (`major == minor == vertical`, `azimuth == 0`).
+- `PropertyPipeline.apply_to_flat_model(...)` is the current smoke execution
+  path. Applying a pipeline to an arbitrary mutable production grid is not
+  exposed through Python yet.
+- Lazy unresolved log expressions, cokriging/trend binding, non-`from_logs`
+  distributions, and anisotropic Rust execution raise explicit
+  `NotImplementedError`s. Anisotropic `Var` specs are still serialized intact and
+  `PropertyPipelineSpec.to_petektools_variogram()` lowers them to the petekTools
+  anisotropic variogram object when petekTools is installed.
 
 ---
 
@@ -1095,20 +1233,29 @@ flatten of `shape`.
 
 ## Python surface
 
-The `petekstatic` wheel intentionally exposes a small locked surface:
+The `petekstatic` wheel exposes the Rust-backed `StaticModel` / `build_flat_model`
+surface and the first notebook-facing workflow facade:
 
 ```python
-petekstatic.__all__ == ["StaticModel", "__version__", "build_flat_model"]
+petekstatic.__all__ == [
+    "CoKriging", "DistributionSpec", "Grid", "Gridding", "Layering",
+    "PropertyHandle", "PropertyPipeline", "PropertyPipelineSpec",
+    "PropertyStore", "SgsRecipe", "Spherical", "StaticModel",
+    "UpscaleRecipeBuilder", "Var", "VolumeCase", "VolumeResult",
+    "WellLog", "WellLogSpec",
+    "__version__", "build_flat_model",
+    "distributions", "upscale",
+]
 ```
 
 `build_flat_model` returns a single-zone `StaticModel` suitable for smoke tests,
-volume reads, and bundle reads. Multi-horizon project loading, inventory
-inspection, role binding (`outline`, ordered horizons, zones/subzones, contacts),
-property population, contact scenarios, bundles, and MC are presented in Python
-through petekSim's **`peteksim`** facade. The example notebooks use
-`petektools.synth_asset` only to create a synthetic project tree; real exports use
-the same `peteksim.Project.load` flow after swapping the project path and role
-literal names.
+volume reads, and bundle reads. `Grid.from_project(...)` owns the canonical
+static declaration shape in Python: geometry, horizons, zones, layers, scalar
+and formula property assignment, property recipe lowering/execution handles, and
+deterministic simple volumes. Full production corner-point model building, contact scenarios,
+bundles, and MC remain backed by the Rust `StaticModelBuilder` path and may
+still be surfaced through petekSim's downstream product facade while the facade
+lowering is completed.
 
 ---
 

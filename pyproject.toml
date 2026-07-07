@@ -20,6 +20,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dynamic = ["version"]
+dependencies = [
+    "petekio>=0.3.2,<0.4",
+    "petektools>=0.2.3,<0.3",
+]
 
 [project.urls]
 # The petekSuite site is the canonical docs home for the whole family.

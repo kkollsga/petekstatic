@@ -6,6 +6,13 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-07
+
+### Fixed
+- Declared the Python wheel runtime dependencies on `petekio` and `petektools`
+  so isolated wheel installs can execute the workflow facade's log-resolution,
+  formula, and variogram paths without relying on a developer venv.
+
 ## [0.1.4] - 2026-07-07
 
 ### Added

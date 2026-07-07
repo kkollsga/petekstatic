@@ -1,90 +1,175 @@
 name: release
+
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to release. Defaults to the workflow ref."
+        required: false
+        type: string
+      version:
+        description: "Expected package version. Must match Cargo metadata."
+        required: false
+        type: string
+
 permissions:
   contents: read
+
 jobs:
+  prepare:
+    name: resolve release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name=="petekstatic") | .version')
+          TAG="v$VER"
+          EXPECTED="${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}"
+          if [ -n "$EXPECTED" ] && [ "$EXPECTED" != "$VER" ]; then
+            echo "expected version $EXPECTED does not match Cargo version $VER" >&2
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "push" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo version $VER" >&2
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+            && git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+            git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+            EXISTING_COMMIT=$(git rev-list -n 1 "$TAG")
+            CURRENT_COMMIT=$(git rev-parse HEAD)
+            if [ "$EXISTING_COMMIT" != "$CURRENT_COMMIT" ]; then
+              echo "tag $TAG already exists on $EXISTING_COMMIT, not $CURRENT_COMMIT" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   gates:
-    # Same rust gates as ci.yml — a tag can only publish what passes them.
     name: gates (fmt / clippy / test)
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - name: require v* tag
-        run: |
-          case "$GITHUB_REF" in
-            refs/tags/v*) ;;
-            *) echo "release workflow must run from a v* tag, got $GITHUB_REF" >&2; exit 1 ;;
-          esac
-      - name: verify tag matches Cargo.toml
-        run: |
-          VER=$(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.name=="petekstatic") | .version')
-          TAG="${GITHUB_REF_NAME#v}"
-          if [ "$VER" != "$TAG" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match Cargo version ${VER}" >&2
-            exit 1
-          fi
+      - uses: Swatinem/rust-cache@v2.9.1
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy (warnings = errors)
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: test
         run: cargo test --workspace
+
+  create-tag:
+    name: create release tag
+    needs: [prepare, gates]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Create or reuse release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.prepare.outputs.tag }}"
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "$TAG supplied by tag push"
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+            git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+            EXISTING_COMMIT=$(git rev-list -n 1 "$TAG")
+            CURRENT_COMMIT=$(git rev-parse HEAD)
+            if [ "$EXISTING_COMMIT" != "$CURRENT_COMMIT" ]; then
+              echo "tag $TAG already exists on $EXISTING_COMMIT, not $CURRENT_COMMIT" >&2
+              exit 1
+            fi
+            echo "$TAG already exists on this commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+
   build-wheels:
     name: wheels (${{ matrix.os }}-${{ matrix.target }})
-    needs: gates
+    needs: [prepare, create-tag]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,   target: x86_64 }
-          - { os: ubuntu-latest,   target: aarch64 }
-          - { os: macos-latest,    target: aarch64 }
-          - { os: macos-latest,    target: x86_64 }
-          - { os: windows-latest,  target: x64 }
+          - { os: ubuntu-latest, target: x86_64 }
+          - { os: ubuntu-latest, target: aarch64 }
+          - { os: macos-latest, target: aarch64 }
+          - { os: macos-latest, target: x86_64 }
+          - { os: windows-latest, target: x64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-python@v6
         with: { python-version: "3.x" }
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@v1.51.0
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
           manylinux: auto
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
           path: dist
+
   sdist:
     name: build sdist
-    needs: gates
+    needs: [prepare, create-tag]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - name: Build sdist
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@v1.51.0
         with:
           command: sdist
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-sdist
           path: dist
+
   publish-crate:
     name: crates.io
-    needs: gates
+    needs: [prepare, create-tag]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Publish to crates.io (skip if this version is already published)
         run: |
@@ -100,24 +185,24 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI (trusted publishing)
-    needs: [gates, build-wheels, sdist]
+    needs: [build-wheels, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { pattern: wheels-*, merge-multiple: true, path: dist }
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1.14
 
   github-release:
     name: GitHub Release
-    needs: [publish-crate, publish-pypi]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [prepare, publish-crate, publish-pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true

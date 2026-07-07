@@ -11,7 +11,6 @@ import pytest
 import petekstatic as pst
 
 petekio = pytest.importorskip("petekio")
-peteksim = pytest.importorskip("peteksim")
 
 
 SYNTH_FIXTURE = (
@@ -56,7 +55,7 @@ def _assert_under(label: str, value_ms: float, budget_ms: float) -> None:
 
 
 def _build_recipe(project, *, module=pst):
-    logs = project.logs
+    logs = project.wells.logs
     return module.upscale(logs.PHIE(logs.NetSand >= 0.50)).sgs(
         variogram=module.Var(
             "spherical",
@@ -85,18 +84,14 @@ def test_static_property_workflow_synthetic_perf_budget():
     )
     project = petekio.Project.load(SYNTH_FIXTURE, aliases=ALIASES)
     recipe = _build_recipe(project, module=pst)
-    shim_recipe = _build_recipe(project, module=peteksim)
 
     first_lower = _bench_ms(lambda: recipe.lower("POR", project=project), n=1)
     spec = recipe.lower("POR", project=project)
-    shim_spec = shim_recipe.lower("POR", project=project)
     cached_lower = _bench_ms(lambda: recipe.lower("POR", project=project), n=100)
-    shim_cached_lower = _bench_ms(lambda: shim_recipe.lower("POR", project=project), n=100)
     construct = _bench_ms(lambda: spec.execute(), n=20)
 
     assert len(spec.well_logs or ()) == 1
     assert sum(len(w.samples) for w in (spec.well_logs or ())) == 5
-    assert type(shim_spec) is type(spec)
     pipe = spec.execute()
     assert pipe.config()["minor_m"] == 700.0
     assert pipe.config()["vertical_m"] == 20.0
@@ -104,13 +99,7 @@ def test_static_property_workflow_synthetic_perf_budget():
     _assert_under("synthetic Project.load min", project_load["min"], 25.0)
     _assert_under("synthetic first lower", first_lower["min"], 5.0)
     _assert_under("synthetic cached lower median", cached_lower["median"], 0.75)
-    _assert_under("synthetic shim cached lower median", shim_cached_lower["median"], 0.75)
     _assert_under("synthetic pipeline construct min", construct["min"], 2.0)
-    _assert_under(
-        "synthetic shim overhead median",
-        shim_cached_lower["median"] - cached_lower["median"],
-        0.25,
-    )
 
 
 @pytest.mark.perf
@@ -133,18 +122,14 @@ def test_static_property_workflow_confidential_perf_budget():
     )
     project = petekio.Project.load(CONFIDENTIAL_DATA, aliases=ALIASES)
     recipe = _build_recipe(project, module=pst)
-    shim_recipe = _build_recipe(project, module=peteksim)
 
     first_lower = _bench_ms(lambda: recipe.lower("POR", project=project), n=1)
     spec = recipe.lower("POR", project=project)
-    shim_spec = shim_recipe.lower("POR", project=project)
     cached_lower = _bench_ms(lambda: recipe.lower("POR", project=project), n=200)
-    shim_cached_lower = _bench_ms(lambda: shim_recipe.lower("POR", project=project), n=200)
     construct = _bench_ms(lambda: spec.execute(), n=20)
 
     assert len(spec.well_logs or ()) >= 1
     assert sum(len(w.samples) for w in (spec.well_logs or ())) >= 1
-    assert type(shim_spec) is type(spec)
     pipe = spec.execute()
     assert pipe.config()["major_m"] == 1500.0
     assert pipe.config()["minor_m"] == 700.0
@@ -154,10 +139,4 @@ def test_static_property_workflow_confidential_perf_budget():
     _assert_under("confidential Project.load min", project_load["min"], 750.0)
     _assert_under("confidential first lower", first_lower["min"], 60.0)
     _assert_under("confidential cached lower median", cached_lower["median"], 1.0)
-    _assert_under("confidential shim cached lower median", shim_cached_lower["median"], 1.0)
     _assert_under("confidential pipeline construct min", construct["min"], 3.0)
-    _assert_under(
-        "confidential shim overhead median",
-        shim_cached_lower["median"] - cached_lower["median"],
-        0.35,
-    )

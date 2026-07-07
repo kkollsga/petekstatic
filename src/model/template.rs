@@ -1472,36 +1472,27 @@ fn realize_properties(
                 }
                 let (pattern, report) = pm.cached.as_ref().expect("cached above");
                 let shift = draw.property_shift(&name);
-                // A fraction cube (PORO/NTG/SW) legitimately holds boundary cells
-                // (a non-net cell NTG=0; an aquifer cell SW=1). A level shift adds
-                // `shift` to every cell, so a boundary cell would escape [0,1] and
-                // the per-cell H2 range check (volumetrics `validate_fraction`)
-                // would reject the whole draw — making property uncertainty on any
-                // log-conditioned real model impossible. Shift **then clamp per
-                // cell** so boundary cells *saturate*: an SW=1 aquifer cell stays 1
-                // under a positive shift (physically right — it cannot get wetter),
-                // and slides into the interior under a negative one. We saturate
-                // rather than *skip* saturated cells so a negative shift still moves
-                // an SW=1 cell — skipping would freeze it wrongly. NaN (undefined)
-                // cells pass through unchanged (`clamp` returns NaN). Non-fraction
-                // cubes (e.g. permeability) are shifted without a clamp. H2 still
-                // guards the DRAWN INPUTS themselves (`realize` above) — only the
-                // per-cell application saturates.
-                let is_fraction = matches!(name.as_str(), PORO | NTG | SW);
                 // Recycle the cube's value buffer in place (take → refill → reinstall)
                 // so the steady-state LevelShift MC path allocates no fresh cube per
                 // draw; the shifted pattern fully overwrites every cell.
                 let mut values = grid.properties_mut().take_values(&name);
-                values.clear();
-                values.reserve(pattern.len());
-                values.extend(pattern.iter().map(|v| {
-                    let shifted = v + shift;
-                    if is_fraction {
-                        shifted.clamp(0.0, 1.0)
-                    } else {
-                        shifted
+                values.resize(pattern.len(), 0.0);
+                if shift == 0.0 {
+                    values.copy_from_slice(pattern);
+                } else {
+                    // Fraction cubes can hold valid boundary cells (NTG=0, SW=1).
+                    // Under a nonzero level shift, saturate them per cell instead
+                    // of letting the downstream H2 fraction guard reject the draw.
+                    let is_fraction = matches!(name.as_str(), PORO | NTG | SW);
+                    for (dst, src) in values.iter_mut().zip(pattern.iter().copied()) {
+                        let shifted = src + shift;
+                        *dst = if is_fraction {
+                            shifted.clamp(0.0, 1.0)
+                        } else {
+                            shifted
+                        };
                     }
-                }));
+                }
                 grid.properties_mut().set(Property {
                     name: name.clone(),
                     values,
@@ -1573,7 +1564,6 @@ fn realize_zone_properties(
                 }
                 let (pattern, report) = zm.cached.as_ref().expect("cached above");
                 let shift = draw.property_shift(&name);
-                let is_fraction = matches!(name.as_str(), PORO | NTG | SW);
                 let dims = grid.dims();
                 let (ni, nj, nk) = (dims.ni, dims.nj, dims.nk);
                 // Start from this draw's current cube (base priors + zone constant
@@ -1588,11 +1578,15 @@ fn realize_zone_properties(
                     for j in 0..nj {
                         for i in 0..ni {
                             let idx = (k * nj + j) * ni + i;
-                            let shifted = pattern[idx] + shift;
-                            values[idx] = if is_fraction {
-                                shifted.clamp(0.0, 1.0)
+                            values[idx] = if shift == 0.0 {
+                                pattern[idx]
                             } else {
-                                shifted
+                                let shifted = pattern[idx] + shift;
+                                if matches!(name.as_str(), PORO | NTG | SW) {
+                                    shifted.clamp(0.0, 1.0)
+                                } else {
+                                    shifted
+                                }
                             };
                         }
                     }

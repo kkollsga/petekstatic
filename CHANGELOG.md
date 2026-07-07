@@ -6,6 +6,41 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-07
+
+### Added
+- Added `HorizonSpec` and `WellTie` to the Python workflow facade. `Grid.horizons`
+  now accepts per-horizon mappings such as
+  `{"name": "Top reservoir", "surface": "Top reservoir input surface",
+  "well top": "well tops/Top reservoir"}` plus
+  `well_tie={"influence_radius": 800}`. `name` is the model horizon name;
+  `surface` and `well top` bind loaded project inputs.
+- Added horizon `zone` tags and inline zone declarations. `zone="Reservoir"`
+  means the zone below that horizon; `zone={"name": "Reservoir", "sub-zones":
+  [...]}` defines sub-zones directly from `.horizons(...)`. Sub-zone boundary
+  names such as `Top Lower Reservoir` are inserted as nested grid horizons.
+- Added compact mixed sub-zone sequences such as
+  `["Upper Reservoir", {"name": "Intra Shale", "surface": "Top Lower Reservoir"},
+  "Lower Reservoir"]`, where the mapping defines the inserted boundary horizon.
+- Added sub-zone construction `type` metadata (`constant`, `conformable`,
+  `isochore`, `fraction`, or `rest conformable`) and boundary mappings that bind
+  to well tops, e.g. `{"name": "Intra Shale", "well top": "Top Lower Reservoir"}`.
+- Added `{"name": "Intra Shale", "surface": True}` for nested model-surface
+  boundaries without an external input binding.
+
+### Changed
+- Removed the old `Grid.horizons(..., tie_to_tops=..., gridding=...)`
+  compatibility path and the Python `Gridding` workflow export. Well-top tying is
+  now expressed only through `well_tie=...`.
+- Updated petekIO/petekTools dependency floors for the release train.
+- Updated CI and release workflows to current action versions and the
+  Actions-owned release flow.
+- Removed the stale Python perf comparison against the old `peteksim.upscale`
+  facade; property recipe performance is now gated against petekStatic +
+  petekIO directly.
+- Tightened the LevelShift hot path by copying cached zero-shift property
+  patterns directly and clarified that release perf budgets must run serially.
+
 ## [0.1.5] - 2026-07-07
 
 ### Fixed

@@ -4,7 +4,7 @@
 //! run). Run them explicitly:
 //!
 //! ```text
-//! cargo test -p srs-model --release --test perf_budgets -- --ignored --test-threads=1
+//! cargo test --release --test perf_budgets -- --ignored --nocapture --test-threads=1
 //! ```
 //!
 //! **Run single-threaded** (`--test-threads=1`): these are wall-clock *timing*
@@ -21,7 +21,7 @@
 //! Basis (reference-box medians, re-baselined 2026-07-04 after
 //! `realize_into` — `task_petekstatic_realize_into`):
 //! - `in_place_summary` @1M ≈ 6.6 ms  → budget 12 ms  (~1.8×) — unchanged (path untouched)
-//! - warm `realize` (LevelShift) @1M ≈ 10.2 ms → budget 22 ms (~2.2×; widened from 2.0× for full-set thermal load)
+//! - warm `realize` (LevelShift) @1M ≈ 10.2 ms → budget 22 ms (~2.2×; widened from 2.0× for full-set thermal/load margin)
 //! - warm `realize_into` (LevelShift) @1M ≈ 10.7 ms → budget 24 ms (~2.2×) — the MC hot path (~5% over `realize`)
 //! - `run_structured_mc(1000, LevelShift)` @1M ≈ 16.8 s → budget 26 s (~1.5×)
 //!
@@ -148,7 +148,7 @@ fn min_ms<F: FnMut()>(iters: usize, mut f: F) -> f64 {
 }
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn in_place_summary_1m_within_budget() {
     let wf = wireframe();
     let mut t = StaticModelTemplate::new(&wf, opts()).unwrap();
@@ -164,7 +164,7 @@ fn in_place_summary_1m_within_budget() {
 }
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn warm_realize_1m_within_budget() {
     let wf = wireframe();
     let mut t = StaticModelTemplate::new(&wf, opts())
@@ -175,10 +175,9 @@ fn warm_realize_1m_within_budget() {
     let ms = min_ms(20, || {
         std::hint::black_box(t.realize(&nominal_draw()).unwrap());
     });
-    // ~10.2 ms measured × ~2.2. Headroom widened from 2.0× (2026-07-04): the tight
-    // 2.0× tripwire flaked only when run in the *full* --ignored set (the 17 s
-    // mc_1000 run heats the box); it passes in isolation. The measured baseline is
-    // unchanged — a 2× regression to ~20 ms still trips 22 ms.
+    // ~10.2 ms measured × ~2.2. Headroom widened from 2.0× (2026-07-04) for
+    // full-suite thermal/load margin. The measured baseline is unchanged — a 2×
+    // regression to ~20 ms still trips 22 ms.
     const BUDGET_MS: f64 = 22.0;
     assert!(
         ms < BUDGET_MS,
@@ -187,7 +186,7 @@ fn warm_realize_1m_within_budget() {
 }
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn warm_realize_into_1m_within_budget() {
     // The MC hot path: steady-state `realize_into` into a reused model, recycling its
     // ZCORN + cube buffers. Guards that the buffer-recycling variant stays on par with
@@ -209,7 +208,7 @@ fn warm_realize_into_1m_within_budget() {
     // recycles the large blocks so there is little to save), so its tripwire sits a
     // hair above `realize`'s 20 ms to stay robust to thermal noise without masking a
     // real regression (a 2× regression still trips it).
-    // ~10.7 ms measured × ~2.2 (widened from 2.0× — same full-set thermal-load
+    // ~10.7 ms measured × ~2.2 (widened from 2.0× — same full-suite thermal/load
     // margin as warm_realize; baseline unchanged, a 2× regression still trips).
     const BUDGET_MS: f64 = 24.0;
     assert!(
@@ -219,7 +218,7 @@ fn warm_realize_into_1m_within_budget() {
 }
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn mc_1000_levelshift_1m_within_budget() {
     let wf = wireframe();
     let mut t = StaticModelTemplate::new(&wf, opts())
@@ -254,7 +253,7 @@ fn mc_1000_levelshift_1m_within_budget() {
 // bytes of an f64 cube, so spilled summary overhead over in-core is modest.
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn forced_spill_build_1m_within_budget() {
     let t0 = Instant::now();
     let model = StaticModelBuilder::flat(NI, NJ, TOP_DEPTH_M, CONTACT_M, opts())
@@ -284,7 +283,7 @@ fn forced_spill_build_1m_within_budget() {
 }
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn spilled_mc_100_1m_within_budget() {
     // Spilled structured MC at 1M cells: each draw is realized in-core then flushed
     // to the reused f32 store, its summary streamed back. The per-draw store I/O is
@@ -413,7 +412,7 @@ fn scat_opts() -> BuildOpts {
 }
 
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn canonical_scatter_build_within_budget() {
     // ONE full canonical-class scatter build: condition (parallel across the 11
     // horizons) + resolve + build. The dominant cost is the parallel conditioning.
@@ -453,7 +452,7 @@ impl std::io::Write for Counter {
 /// catastrophically regress. Measured on the reference box: ~6.65 B/cell (6.65 MB)
 /// self-contained, ~34 ms at 1M cells.
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn volume_bundle_1m_within_budget() {
     let wf = wireframe();
     let mut t = StaticModelTemplate::new(&wf, opts())
@@ -492,7 +491,7 @@ fn volume_bundle_1m_within_budget() {
 /// budget 44 ms (~2.0×). A breach means the per-draw field generation regressed
 /// materially (regression tripwire, not a micro-benchmark).
 #[test]
-#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored"]
+#[ignore = "release-gated perf budget: cargo test --release --test perf_budgets -- --ignored --test-threads=1"]
 fn structural_realize_field_cost_within_budget() {
     use petekstatic::model::{
         HorizonSource, HorizonStack, PerturbationField, StackHorizon, StackZone, ZoneDraw,

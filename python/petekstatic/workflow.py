@@ -20,18 +20,56 @@ from typing import Any
 
 Number = int | float
 Progress = bool | Callable[[dict[str, Any]], None] | None
+ZONE_TYPES = frozenset({"constant", "conformable", "isochore", "fraction", "rest conformable"})
 
 
 @dataclass(frozen=True)
-class Gridding:
-    """Horizon-gridding options for the workflow declaration."""
+class HorizonSpec:
+    """One model horizon and its optional input surface / well-top bindings."""
 
-    collapse_thin: bool = False
-    min_thickness_m: float = 0.0
+    name: str
+    surface: str | None = None
+    well_top: str | None = None
+    zone: str | Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
-        if not isfinite(self.min_thickness_m) or self.min_thickness_m < 0.0:
-            raise ValueError("Gridding.min_thickness_m must be finite and >= 0")
+        name = str(self.name).strip()
+        if not name:
+            raise ValueError("HorizonSpec.name must be non-empty")
+        object.__setattr__(self, "name", name)
+        if self.surface is not None:
+            surface = str(self.surface).strip()
+            if not surface:
+                raise ValueError("HorizonSpec.surface must be non-empty")
+            object.__setattr__(self, "surface", surface)
+        if self.well_top is not None:
+            well_top = str(self.well_top).strip()
+            if not well_top:
+                raise ValueError("HorizonSpec.well_top must be non-empty")
+            object.__setattr__(self, "well_top", well_top)
+        if self.zone is not None:
+            if isinstance(self.zone, Mapping):
+                object.__setattr__(self, "zone", dict(self.zone))
+                return
+            zone = str(self.zone).strip()
+            if not zone:
+                raise ValueError("HorizonSpec.zone must be non-empty")
+            object.__setattr__(self, "zone", zone)
+
+
+@dataclass(frozen=True)
+class WellTie:
+    """Well-top tie settings for structural horizons."""
+
+    influence_radius: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.influence_radius is None:
+            return
+        radius = float(self.influence_radius)
+        if not isfinite(radius) or radius <= 0.0:
+            raise ValueError("WellTie.influence_radius must be finite and > 0")
+        object.__setattr__(self, "influence_radius", radius)
 
 
 @dataclass(frozen=True)
@@ -616,9 +654,10 @@ class Grid:
         self.project = project
         self._geometry: _GeometrySpec | None = None
         self._horizons: list[str] = []
-        self._tie_to_tops = False
-        self._gridding = Gridding()
+        self._horizon_specs: list[HorizonSpec] = []
+        self._well_tie: WellTie | None = None
         self._zones: dict[str, tuple[str, str]] = {}
+        self._zone_types: dict[str, str] = {}
         self._layers: dict[str, Layering] = {}
         self._property_steps: dict[str, list[_PropertyStep]] = {}
         self._property_pipelines: dict[str, PropertyPipelineSpec] = {}
@@ -650,45 +689,244 @@ class Grid:
 
     def horizons(
         self,
-        names: Sequence[str],
+        names: Sequence[str | Mapping[str, Any] | HorizonSpec],
         *,
-        tie_to_tops: bool = False,
-        gridding: Gridding | None = None,
+        well_tie: WellTie | Mapping[str, Any] | None = None,
     ) -> "Grid":
         if len(names) < 2:
             raise ValueError("horizons requires at least a top and a base horizon")
-        clean = [str(name) for name in names]
-        for name in clean:
+        specs = [_coerce_horizon_spec(item) for item in names]
+        clean = [spec.name for spec in specs]
+        tie = _coerce_well_tie(well_tie)
+        for spec in specs:
+            surface_name = spec.surface or spec.name
             try:
-                _require_project_asset(self.project, "horizon", name, ("surfaces", "horizons"))
+                _require_project_asset(
+                    self.project,
+                    "horizon surface",
+                    surface_name,
+                    ("surfaces", "horizons"),
+                )
             except ValueError:
-                if not tie_to_tops:
+                if spec.surface is not None or tie is None:
                     raise
-                _require_project_asset(self.project, "horizon", name, ("tops", "well_tops"))
-        if gridding is not None and not isinstance(gridding, Gridding):
-            raise TypeError("horizons.gridding must be a Gridding instance")
+                _require_project_asset(
+                    self.project,
+                    "well top",
+                    spec.well_top or spec.name,
+                    ("tops", "well_tops"),
+                )
+            if tie is not None and (spec.well_top is not None or spec.surface is None):
+                _require_project_asset(
+                    self.project,
+                    "well top",
+                    spec.well_top or spec.name,
+                    ("tops", "well_tops"),
+                )
         self._horizons = clean
-        self._tie_to_tops = bool(tie_to_tops)
-        self._gridding = gridding or Gridding()
+        self._horizon_specs = specs
+        self._well_tie = tie
+        inline_zones = self._zones_from_horizon_tags()
+        if inline_zones:
+            self._zones = inline_zones
         return self
 
-    def zones(self, zones: Mapping[str, tuple[str, str]]) -> "Grid":
+    def zones(
+        self,
+        zones: Mapping[str, tuple[str, str]] | Sequence[Mapping[str, Any]],
+    ) -> "Grid":
         if not zones:
             raise ValueError("zones requires at least one named zone")
         horizon_set = set(self._horizons)
         out: dict[str, tuple[str, str]] = {}
-        for zone, pair in zones.items():
-            if len(pair) != 2:
-                raise ValueError(f"zone '{zone}' must be bounded by two horizons")
-            top, base = str(pair[0]), str(pair[1])
-            missing = [name for name in (top, base) if name not in horizon_set]
-            if missing:
-                raise ValueError(
-                    f"zone '{zone}' references undeclared horizon(s): {', '.join(missing)}"
-                )
-            out[str(zone)] = (top, base)
+        if isinstance(zones, Mapping):
+            for zone, pair in zones.items():
+                if len(pair) != 2:
+                    raise ValueError(f"zone '{zone}' must be bounded by two horizons")
+                top, base = str(pair[0]), str(pair[1])
+                missing = [name for name in (top, base) if name not in horizon_set]
+                if missing:
+                    raise ValueError(
+                        f"zone '{zone}' references undeclared horizon(s): {', '.join(missing)}"
+                    )
+                out[str(zone)] = (top, base)
+                self._zone_types[str(zone)] = "rest conformable"
+        else:
+            for spec in zones:
+                for zone_name, top, base, zone_type in self._expand_zone_spec(spec):
+                    for horizon in (top, base):
+                        if horizon not in horizon_set:
+                            self._insert_nested_horizon(horizon)
+                            horizon_set.add(horizon)
+                    out[zone_name] = (top, base)
+                    self._zone_types[zone_name] = zone_type
         self._zones = out
         return self
+
+    def _insert_nested_horizon(self, name: str) -> None:
+        if name in self._horizons:
+            return
+        self._horizons.append(name)
+        self._horizon_specs.append(HorizonSpec(name))
+
+    def _zones_from_horizon_tags(self) -> dict[str, tuple[str, str]]:
+        out: dict[str, tuple[str, str]] = {}
+        horizon_set = set(self._horizons)
+        for index, horizon in enumerate(list(self._horizon_specs)):
+            if horizon.zone is None:
+                continue
+            zone_spec = self._zone_spec_from_horizon_tag(horizon, index)
+            for zone_name, top, base, zone_type in self._expand_zone_spec(zone_spec):
+                for boundary in (top, base):
+                    if boundary not in horizon_set:
+                        self._insert_nested_horizon(boundary)
+                        horizon_set.add(boundary)
+                out[zone_name] = (top, base)
+                self._zone_types[zone_name] = zone_type
+        return out
+
+    def _zone_spec_from_horizon_tag(
+        self,
+        horizon: HorizonSpec,
+        index: int,
+    ) -> dict[str, Any]:
+        if index + 1 >= len(self._horizon_specs):
+            raise ValueError(f"zone below horizon '{horizon.name}' has no base horizon")
+        default = {
+            "top": horizon.name,
+            "base": self._horizon_specs[index + 1].name,
+        }
+        if isinstance(horizon.zone, Mapping):
+            out = dict(horizon.zone)
+            if "zone" not in out and "name" in out:
+                out["zone"] = out["name"]
+            out.setdefault("top", default["top"])
+            out.setdefault("base", default["base"])
+            return out
+        return {"zone": str(horizon.zone), **default}
+
+    def _expand_zone_spec(self, spec: Mapping[str, Any]) -> list[tuple[str, str, str, str]]:
+        if not isinstance(spec, Mapping):
+            raise TypeError("zones entries must be mappings")
+        unknown = sorted(
+            set(spec)
+            - {"zone", "name", "top", "base", "type", "sub-zones", "sub_zones", "subzones"}
+        )
+        if unknown:
+            raise ValueError("unknown zone field(s): " + ", ".join(unknown))
+        zone_name = _first_mapping_value(spec, ("zone", "name"))
+        if zone_name is None:
+            raise ValueError("zone mapping requires a 'zone'")
+        zone_name = str(zone_name)
+        zone_type = _coerce_zone_type(spec.get("type"))
+        parent_top, parent_base = self._zone_bounds_from_spec(zone_name, spec)
+        subzones = _first_mapping_value(spec, ("sub-zones", "sub_zones", "subzones"))
+        if not subzones:
+            return [(zone_name, parent_top, parent_base, zone_type)]
+        mixed = any(
+            not isinstance(item, Mapping)
+            or "surface" in item
+            or "well top" in item
+            or "well_top" in item
+            for item in subzones
+        )
+        if mixed:
+            return self._expand_mixed_subzone_sequence(subzones, parent_top, parent_base)
+        out: list[tuple[str, str, str, str]] = []
+        cursor = parent_top
+        for subzone in subzones:
+            if not isinstance(subzone, Mapping):
+                raise TypeError("sub-zones entries must be mappings")
+            unknown = sorted(set(subzone) - {"name", "zone", "top", "base", "type"})
+            if unknown:
+                raise ValueError("unknown sub-zone field(s): " + ", ".join(unknown))
+            name = subzone.get("name") or subzone.get("zone")
+            if name is None:
+                raise ValueError("sub-zone mapping requires a 'name' or 'zone'")
+            top = str(subzone.get("top", cursor))
+            base = str(subzone.get("base", parent_base))
+            out.append((str(name), top, base, _coerce_zone_type(subzone.get("type"))))
+            cursor = base
+        return out
+
+    def _expand_mixed_subzone_sequence(
+        self,
+        subzones: Sequence[Any],
+        parent_top: str,
+        parent_base: str,
+    ) -> list[tuple[str, str, str, str]]:
+        intervals: list[str] = []
+        interval_types: list[str] = []
+        boundaries: list[str] = []
+        expecting_interval = True
+        for item in subzones:
+            if expecting_interval:
+                if isinstance(item, str):
+                    intervals.append(item)
+                    interval_types.append("rest conformable")
+                    expecting_interval = False
+                    continue
+                if isinstance(item, Mapping) and not _is_boundary_subzone_item(item):
+                    name = item.get("name") or item.get("zone")
+                    if name is None:
+                        raise ValueError("sub-zone mapping requires a 'name' or 'zone'")
+                    unknown = sorted(set(item) - {"name", "zone", "type"})
+                    if unknown:
+                        raise ValueError("unknown sub-zone field(s): " + ", ".join(unknown))
+                    intervals.append(str(name))
+                    interval_types.append(_coerce_zone_type(item.get("type")))
+                    expecting_interval = False
+                    continue
+                raise TypeError("mixed sub-zones must alternate zone names and boundary mappings")
+            if not isinstance(item, Mapping) or not _is_boundary_subzone_item(item):
+                raise TypeError(
+                    "mixed sub-zones boundary entries must be mappings with 'surface' or 'well top'"
+                )
+            unknown = sorted(set(item) - {"name", "surface", "well top", "well_top"})
+            if unknown:
+                raise ValueError("unknown sub-zone boundary field(s): " + ", ".join(unknown))
+            well_top = _first_mapping_value(item, ("well top", "well_top"))
+            boundary = str(item.get("name") or item.get("surface") or well_top)
+            surface_value = item.get("surface")
+            if surface_value is True and "name" not in item:
+                raise ValueError("surface=True boundary requires a 'name'")
+            surface = None if surface_value is True or "surface" not in item else str(surface_value)
+            well_top_s = None if well_top is None else str(well_top)
+            if boundary not in self._horizons:
+                self._horizons.append(boundary)
+                self._horizon_specs.append(
+                    HorizonSpec(boundary, surface=surface, well_top=well_top_s)
+                )
+            boundaries.append(boundary)
+            expecting_interval = True
+        if len(intervals) != len(boundaries) + 1:
+            raise ValueError("mixed sub-zones must end with a zone name")
+        out: list[tuple[str, str, str, str]] = []
+        for index, interval in enumerate(intervals):
+            top = parent_top if index == 0 else boundaries[index - 1]
+            base = parent_base if index == len(intervals) - 1 else boundaries[index]
+            out.append((interval, top, base, interval_types[index]))
+        return out
+
+    def _zone_bounds_from_spec(self, zone_name: str, spec: Mapping[str, Any]) -> tuple[str, str]:
+        explicit_top = spec.get("top")
+        explicit_base = spec.get("base")
+        if explicit_top is not None and explicit_base is not None:
+            return str(explicit_top), str(explicit_base)
+        for index, horizon in enumerate(self._horizon_specs):
+            if horizon.zone != zone_name:
+                continue
+            top = str(explicit_top or horizon.name)
+            if explicit_base is not None:
+                base = str(explicit_base)
+            elif index + 1 < len(self._horizon_specs):
+                base = self._horizon_specs[index + 1].name
+            else:
+                raise ValueError(f"zone '{zone_name}' has no base horizon")
+            return top, base
+        raise ValueError(
+            f"zone '{zone_name}' has no declared bounds; add top/base or a horizon zone tag"
+        )
 
     def layers(self, layers: Mapping[str, Layering | int]) -> "Grid":
         if not self._zones:
@@ -737,7 +975,11 @@ class Grid:
         vectors: list[float] = []
         for zone, (top_name, base_name) in self._zones.items():
             layers = self._layers[zone].n
-            thickness = _zone_thickness(self.project, top_name, base_name)
+            thickness = _zone_thickness(
+                self.project,
+                self._horizon_surface_name(top_name),
+                self._horizon_surface_name(base_name),
+            )
             if thickness:
                 for dz in thickness:
                     per_layer = area * max(dz, 0.0) / layers
@@ -770,9 +1012,19 @@ class Grid:
         total = 0
         for zone, (top_name, base_name) in self._zones.items():
             layers = self._layers[zone].n
-            thickness = _zone_thickness(self.project, top_name, base_name)
+            thickness = _zone_thickness(
+                self.project,
+                self._horizon_surface_name(top_name),
+                self._horizon_surface_name(base_name),
+            )
             total += (len(thickness) if thickness else 1) * layers
         return total or None
+
+    def _horizon_surface_name(self, horizon_name: str) -> str:
+        for spec in self._horizon_specs:
+            if spec.name == horizon_name:
+                return spec.surface or spec.name
+        return horizon_name
 
 
 class PropertyStore:
@@ -1330,6 +1582,87 @@ def _asset_names(project: Any, kinds: Sequence[str]) -> set[str]:
     return names
 
 
+def _coerce_horizon_spec(item: str | Mapping[str, Any] | HorizonSpec) -> HorizonSpec:
+    if isinstance(item, HorizonSpec):
+        return item
+    if isinstance(item, str):
+        return HorizonSpec(item)
+    if not isinstance(item, Mapping):
+        raise TypeError(
+            "horizons entries must be strings, HorizonSpec objects, or mappings"
+        )
+    if "name" not in item:
+        raise ValueError("horizon mapping requires a 'name'")
+    surface = _first_mapping_value(item, ("surface", "input surface", "input_surface"))
+    well_top = _first_mapping_value(item, ("well top", "well_top", "wellTop", "welltop"))
+    zone = item.get("zone")
+    unknown = sorted(
+        set(item)
+        - {
+            "name",
+            "surface",
+            "input surface",
+            "input_surface",
+            "well top",
+            "well_top",
+            "wellTop",
+            "welltop",
+            "zone",
+        }
+    )
+    if unknown:
+        raise ValueError("unknown horizon field(s): " + ", ".join(unknown))
+    return HorizonSpec(
+        str(item["name"]),
+        surface=None if surface is None else str(surface),
+        well_top=None if well_top is None else str(well_top),
+        zone=None if zone is None else dict(zone) if isinstance(zone, Mapping) else str(zone),
+    )
+
+
+def _coerce_well_tie(value: WellTie | Mapping[str, Any] | None) -> WellTie | None:
+    if value is None:
+        return None
+    if isinstance(value, WellTie):
+        return value
+    if not isinstance(value, Mapping):
+        raise TypeError("horizons.well_tie must be a mapping, WellTie, or None")
+    unknown = sorted(set(value) - {"influence_radius", "influence_radius_m", "radius", "radius_m"})
+    if unknown:
+        raise ValueError("unknown well_tie field(s): " + ", ".join(unknown))
+    radius = _first_mapping_value(
+        value,
+        ("influence_radius", "influence_radius_m", "radius", "radius_m"),
+    )
+    return WellTie(influence_radius=None if radius is None else float(radius))
+
+
+def _coerce_zone_type(value: Any) -> str:
+    if value is None:
+        return "rest conformable"
+    zone_type = str(value).strip().lower().replace("_", " ").replace("-", " ")
+    if zone_type not in ZONE_TYPES:
+        raise ValueError(
+            "zone type must be one of: " + ", ".join(sorted(ZONE_TYPES))
+        )
+    return zone_type
+
+
+def _is_boundary_subzone_item(item: Mapping[str, Any]) -> bool:
+    return (
+        "surface" in item
+        or "well top" in item
+        or "well_top" in item
+    )
+
+
+def _first_mapping_value(mapping: Mapping[str, Any], keys: Sequence[str]) -> Any:
+    for key in keys:
+        if key in mapping:
+            return mapping[key]
+    return None
+
+
 def _require_project_asset(
     project: Any,
     role: str,
@@ -1338,6 +1671,8 @@ def _require_project_asset(
 ) -> None:
     names = _asset_names(project, kinds)
     if _matches_asset_name(name, names):
+        return
+    if role == "well top" and _project_has_well_top(project, name):
         return
     else:
         available = ", ".join(sorted(names)) or "none"
@@ -1350,8 +1685,65 @@ def _require_project_asset(
 def _matches_asset_name(name: str, names: set[str]) -> bool:
     if name in names:
         return True
-    suffix_matches = [candidate for candidate in names if candidate.rsplit(".", 1)[-1] == name]
+    needle = _asset_leaf(name)
+    suffix_matches = [candidate for candidate in names if _asset_leaf(candidate) == needle]
     return len(suffix_matches) == 1
+
+
+def _asset_leaf(name: str) -> str:
+    out = str(name).replace("\\", "/").rstrip("/")
+    if "/" in out:
+        out = out.rsplit("/", 1)[-1]
+    if "." in out:
+        out = out.rsplit(".", 1)[-1]
+    return out
+
+
+def _project_has_well_top(project: Any, name: str) -> bool:
+    candidates = (str(name), _asset_leaf(name))
+    for well_id in _project_well_ids(project):
+        well_getter = getattr(project, "well", None)
+        if not callable(well_getter):
+            continue
+        try:
+            well = well_getter(well_id)
+        except Exception:
+            continue
+        if well is None:
+            continue
+        top_getter = getattr(well, "top", None)
+        if not callable(top_getter):
+            continue
+        for candidate in candidates:
+            try:
+                if top_getter(candidate) is not None:
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def _project_well_ids(project: Any) -> list[str]:
+    wells = getattr(project, "wells", None)
+    if wells is not None:
+        names = getattr(wells, "names", None)
+        if callable(names):
+            try:
+                return [str(item) for item in names()]
+            except Exception:
+                pass
+        if isinstance(wells, Mapping):
+            return [str(item) for item in wells.keys()]
+        if isinstance(wells, Iterable) and not isinstance(wells, (str, bytes)):
+            try:
+                return [str(item) for item in wells]
+            except Exception:
+                pass
+    inv = _project_inventory(project)
+    value = inv.get("wells")
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+        return [str(item) for item in value]
+    return []
 
 
 def _zone_thickness(project: Any, top_name: str, base_name: str) -> list[float]:

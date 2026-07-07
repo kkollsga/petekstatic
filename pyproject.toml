@@ -21,8 +21,8 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "petekio>=0.3.2,<0.4",
-    "petektools>=0.2.3,<0.3",
+    "petekio>=0.3.3,<0.4",
+    "petektools>=0.2.4,<0.3",
 ]
 
 [project.urls]

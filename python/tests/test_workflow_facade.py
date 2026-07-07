@@ -18,6 +18,9 @@ class SyntheticProject:
         self.surfaces = {
             "Surfaces.Top reservoir": Surface([1000.0, 1000.0]),
             "Surfaces.Base reservoir": Surface([1020.0, 1010.0]),
+            "Top reservoir input surface": Surface([900.0, 900.0]),
+            "Base reservoir input surface": Surface([930.0, 920.0]),
+            "input surface": Surface([950.0, 940.0]),
         }
         self.polygons = {"Polygons.ModelEdge": [[0.0, 0.0], [1.0, 0.0]]}
         self.tops = ["Top reservoir", "Base reservoir"]
@@ -105,9 +108,11 @@ def declared_grid():
         pst.Grid.from_project(SyntheticProject())
         .geometry(cell=(10.0, 10.0), orient=0.0, outline="ModelEdge")
         .horizons(
-            ["Top reservoir", "Base reservoir"],
-            tie_to_tops=True,
-            gridding=pst.Gridding(collapse_thin=True),
+            [
+                {"name": "Top reservoir", "well top": "well tops/Top reservoir"},
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
         )
         .zones({"Reservoir": ("Top reservoir", "Base reservoir")})
         .layers({"Reservoir": pst.Layering(n=2)})
@@ -434,7 +439,7 @@ def test_recipe_execution_uses_petekio_project_log_resolver():
             "NetSand": ["NTG", "NETSAND"],
         },
     )
-    logs = project.logs
+    logs = project.wells.logs
 
     recipe = pst.upscale(logs.PHIE(logs.NetSand >= 0.50)).sgs(
         variogram=pst.Var(
@@ -513,11 +518,378 @@ def test_static_workflow_facade_validates_project_asset_names_loudly():
             .geometry(cell=(10.0, 10.0), outline="MissingEdge")
         )
 
-    with pytest.raises(ValueError, match="missing horizon 'Missing top'"):
+    with pytest.raises(ValueError, match="missing horizon surface 'Missing top'"):
         (
             pst.Grid.from_project(SyntheticProject())
             .geometry(cell=(10.0, 10.0), outline="ModelEdge")
             .horizons(["Missing top", "Base reservoir"])
+        )
+
+
+def test_static_workflow_facade_horizons_accept_well_tie_mapping():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {"name": "Top reservoir", "well top": "well tops/Top reservoir"},
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
+        )
+    )
+
+    assert grid._horizons == ["Top reservoir", "Base reservoir"]
+    assert grid._horizon_specs[0] == pst.HorizonSpec(
+        "Top reservoir", well_top="well tops/Top reservoir"
+    )
+    assert grid._horizon_specs[1] == pst.HorizonSpec("Base reservoir")
+    assert grid._well_tie == pst.WellTie(influence_radius=800.0)
+
+    with pytest.raises(TypeError, match="tie_to_tops"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(["Top reservoir", "Base reservoir"], tie_to_tops=True)
+        )
+    with pytest.raises(TypeError, match="gridding"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(["Top reservoir", "Base reservoir"], gridding={})
+        )
+    assert not hasattr(pst, "Gridding")
+
+    with pytest.raises(ValueError, match="unknown horizon field"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons([{"name": "Top reservoir", "top": "Top reservoir"}, "Base reservoir"])
+        )
+    with pytest.raises(ValueError, match="WellTie.influence_radius"):
+        pst.WellTie(influence_radius=0)
+    with pytest.raises(ValueError, match="WellTie.influence_radius"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(["Top reservoir", "Base reservoir"], well_tie={"influence_radius": 0})
+        )
+    with pytest.raises(ValueError, match="unknown well_tie field"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(["Top reservoir", "Base reservoir"], well_tie={"range": 800})
+        )
+
+
+def test_static_workflow_facade_horizons_accept_custom_names_and_surface_bindings():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {
+                    "name": "Top reservoir",
+                    "surface": "Top reservoir input surface",
+                    "well top": "well tops/Top reservoir",
+                    "zone": "Reservoir",
+                },
+                "Base reservoir",
+                {
+                    "name": "Custom model horizon name",
+                    "surface": "input surface",
+                },
+            ],
+            well_tie={"influence_radius": 800},
+        )
+        .zones({"Reservoir": ("Top reservoir", "Base reservoir")})
+        .layers({"Reservoir": pst.Layering(n=2)})
+    )
+
+    assert grid._horizons == [
+        "Top reservoir",
+        "Base reservoir",
+        "Custom model horizon name",
+    ]
+    assert grid._horizon_specs[0] == pst.HorizonSpec(
+        "Top reservoir",
+        surface="Top reservoir input surface",
+        well_top="well tops/Top reservoir",
+        zone="Reservoir",
+    )
+    assert grid._horizon_specs[2] == pst.HorizonSpec(
+        "Custom model horizon name",
+        surface="input surface",
+    )
+    assert grid._declared_cell_count() == 4
+
+    with pytest.raises(ValueError, match="missing horizon surface 'Missing surface'"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(
+                [
+                    {"name": "Model top", "surface": "Missing surface"},
+                    "Base reservoir",
+                ],
+                well_tie={"influence_radius": 800},
+            )
+    )
+
+
+def test_static_workflow_facade_zones_accept_subzone_specs_and_insert_nested_horizons():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {
+                    "name": "Top reservoir",
+                    "surface": "Top reservoir input surface",
+                    "well top": "well tops/Top reservoir",
+                    "zone": "Reservoir",
+                },
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
+        )
+        .zones(
+            [
+                {
+                    "zone": "Reservoir",
+                    "sub-zones": [
+                        {"name": "Upper Reservoir", "base": "Top Lower Reservoir"},
+                        {"name": "Lower Reservoir", "top": "Top Lower Reservoir"},
+                    ],
+                }
+            ]
+        )
+    )
+
+    assert "Top Lower Reservoir" in grid._horizons
+    assert grid._horizon_specs[-1] == pst.HorizonSpec("Top Lower Reservoir")
+    assert grid._zones == {
+        "Upper Reservoir": ("Top reservoir", "Top Lower Reservoir"),
+        "Lower Reservoir": ("Top Lower Reservoir", "Base reservoir"),
+    }
+
+    with pytest.raises(ValueError, match="zone 'Missing' has no declared bounds"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(["Top reservoir", "Base reservoir"])
+            .zones([{"zone": "Missing"}])
+        )
+
+
+def test_static_workflow_facade_horizon_zone_tag_accepts_inline_subzones():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {
+                    "name": "Top reservoir",
+                    "surface": "Top reservoir input surface",
+                    "well top": "well tops/Top reservoir",
+                    "zone": {
+                        "name": "Reservoir",
+                        "sub-zones": [
+                            {"name": "Upper Reservoir", "base": "Top Lower Reservoir"},
+                            {"name": "Lower Reservoir", "top": "Top Lower Reservoir"},
+                        ],
+                    },
+                },
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
+        )
+    )
+
+    assert "Top Lower Reservoir" in grid._horizons
+    assert grid._horizon_specs[0].zone == {
+        "name": "Reservoir",
+        "sub-zones": [
+            {"name": "Upper Reservoir", "base": "Top Lower Reservoir"},
+            {"name": "Lower Reservoir", "top": "Top Lower Reservoir"},
+        ],
+    }
+    assert grid._zones == {
+        "Upper Reservoir": ("Top reservoir", "Top Lower Reservoir"),
+        "Lower Reservoir": ("Top Lower Reservoir", "Base reservoir"),
+    }
+
+
+def test_static_workflow_facade_subzones_accept_names_and_boundary_surfaces():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {
+                    "name": "Top reservoir",
+                    "surface": "Top reservoir input surface",
+                    "well top": "well tops/Top reservoir",
+                    "zone": {
+                        "name": "Reservoir",
+                        "sub-zones": [
+                            "Upper Reservoir",
+                            {"name": "Intra Shale", "surface": "Top Lower Reservoir"},
+                            "Lower Reservoir",
+                        ],
+                    },
+                },
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
+        )
+    )
+
+    assert grid._horizon_specs[-1] == pst.HorizonSpec(
+        "Intra Shale",
+        surface="Top Lower Reservoir",
+    )
+    assert grid._zones == {
+        "Upper Reservoir": ("Top reservoir", "Intra Shale"),
+        "Lower Reservoir": ("Intra Shale", "Base reservoir"),
+    }
+
+    with pytest.raises(ValueError, match="mixed sub-zones must end with a zone name"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(
+                [
+                    {
+                        "name": "Top reservoir",
+                        "zone": {
+                            "name": "Reservoir",
+                            "sub-zones": [
+                                "Upper Reservoir",
+                                {"surface": "Top Lower Reservoir"},
+                            ],
+                        },
+                    },
+                    "Base reservoir",
+                ],
+                well_tie={"influence_radius": 800},
+            )
+        )
+
+
+def test_static_workflow_facade_subzones_accept_zone_types_and_well_top_boundaries():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {
+                    "name": "Top reservoir",
+                    "surface": "Top reservoir input surface",
+                    "well top": "well tops/Top reservoir",
+                    "zone": {
+                        "name": "Reservoir",
+                        "sub-zones": [
+                            {"zone": "Top Reservoir", "type": "constant"},
+                            {"name": "Intra Shale", "well top": "Top Lower Reservoir"},
+                            {"name": "Lower Reservoir", "type": "isochore"},
+                        ],
+                    },
+                },
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
+        )
+    )
+
+    assert grid._horizon_specs[-1] == pst.HorizonSpec(
+        "Intra Shale",
+        well_top="Top Lower Reservoir",
+    )
+    assert grid._zones == {
+        "Top Reservoir": ("Top reservoir", "Intra Shale"),
+        "Lower Reservoir": ("Intra Shale", "Base reservoir"),
+    }
+    assert grid._zone_types == {
+        "Top Reservoir": "constant",
+        "Lower Reservoir": "isochore",
+    }
+
+    with pytest.raises(ValueError, match="zone type"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(
+                [
+                    {
+                        "name": "Top reservoir",
+                        "zone": {
+                            "name": "Reservoir",
+                            "sub-zones": [
+                                {"zone": "Top Reservoir", "type": "pinch"},
+                                {"name": "Lower Reservoir"},
+                            ],
+                        },
+                    },
+                    "Base reservoir",
+                ],
+                well_tie={"influence_radius": 800},
+            )
+        )
+
+
+def test_static_workflow_facade_subzones_accept_unbound_model_surface_boundary():
+    grid = (
+        pst.Grid.from_project(SyntheticProject())
+        .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+        .horizons(
+            [
+                {
+                    "name": "Top reservoir",
+                    "surface": "Top reservoir input surface",
+                    "well top": "well tops/Top reservoir",
+                    "zone": {
+                        "name": "Reservoir",
+                        "sub-zones": [
+                            "Top Reservoir",
+                            {"name": "Intra Shale", "surface": True},
+                            "Lower Reservoir",
+                        ],
+                    },
+                },
+                "Base reservoir",
+            ],
+            well_tie={"influence_radius": 800},
+        )
+    )
+
+    assert grid._horizon_specs[-1] == pst.HorizonSpec("Intra Shale")
+    assert grid._zones == {
+        "Top Reservoir": ("Top reservoir", "Intra Shale"),
+        "Lower Reservoir": ("Intra Shale", "Base reservoir"),
+    }
+
+    with pytest.raises(ValueError, match="surface=True boundary requires a 'name'"):
+        (
+            pst.Grid.from_project(SyntheticProject())
+            .geometry(cell=(10.0, 10.0), outline="ModelEdge")
+            .horizons(
+                [
+                    {
+                        "name": "Top reservoir",
+                        "zone": {
+                            "name": "Reservoir",
+                            "sub-zones": [
+                                "Top Reservoir",
+                                {"surface": True},
+                                "Lower Reservoir",
+                            ],
+                        },
+                    },
+                    "Base reservoir",
+                ],
+                well_tie={"influence_radius": 800},
+            )
         )
 
 

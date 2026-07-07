@@ -49,9 +49,27 @@ import petekstatic as pst
 grid = (
     pst.Grid.from_project(project)
     .geometry(cell=(50.0, 50.0), orient=0.0, outline="ModelEdge")
-    .horizons(["Top reservoir", "Base reservoir"], tie_to_tops=True)
-    .zones({"Reservoir": ("Top reservoir", "Base reservoir")})
-    .layers({"Reservoir": pst.Layering(n=4)})
+    .horizons(
+        [
+            {
+                "name": "Top reservoir",
+                "surface": "Top reservoir input surface",
+                "well top": "well tops/Top reservoir",
+                "zone": {
+                    "name": "Reservoir",
+                    "sub-zones": [
+                        {"zone": "Top Reservoir", "type": "constant"},
+                        {"name": "Intra Shale", "well top": "Top Lower Reservoir"},
+                        {"name": "Lower Reservoir", "type": "isochore"},
+                    ],
+                },
+            },
+            "Base reservoir",
+            {"name": "Custom model horizon name", "surface": "input surface"},
+        ],
+        well_tie={"influence_radius": 800},
+    )
+    .layers({"Top Reservoir": pst.Layering(n=2), "Lower Reservoir": pst.Layering(n=2)})
 )
 
 p = grid.properties
@@ -104,7 +122,7 @@ variogram object.
 
 ## Status — built and green
 
-A single crate, `petekstatic` (0.1.5), whose modules preserve the historical
+A single crate, `petekstatic` (0.1.6), whose modules preserve the historical
 layer boundaries and one-directional imports: `petekstatic::{error, wireframe,
 grid, petro, gridder, volumetrics, uncertainty, data, spill, model}` — with the
 top-of-DAG `model` surface (the `StaticModel` aggregate + the ratified

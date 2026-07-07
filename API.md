@@ -31,12 +31,26 @@ grid = (
     pst.Grid.from_project(project)
     .geometry(cell=(50.0, 50.0), orient=0.0, outline="ModelEdge")
     .horizons(
-        ["Top reservoir", "Base reservoir"],
-        tie_to_tops=True,
-        gridding=pst.Gridding(collapse_thin=True),
+        [
+            {
+                "name": "Top reservoir",
+                "surface": "Top reservoir input surface",
+                "well top": "well tops/Top reservoir",
+                "zone": {
+                    "name": "Reservoir",
+                    "sub-zones": [
+                        {"zone": "Top Reservoir", "type": "constant"},
+                        {"name": "Intra Shale", "well top": "Top Lower Reservoir"},
+                        {"name": "Lower Reservoir", "type": "isochore"},
+                    ],
+                },
+            },
+            "Base reservoir",
+            {"name": "Custom model horizon name", "surface": "input surface"},
+        ],
+        well_tie={"influence_radius": 800},
     )
-    .zones({"Reservoir": ("Top reservoir", "Base reservoir")})
-    .layers({"Reservoir": pst.Layering(n=4)})
+    .layers({"Top Reservoir": pst.Layering(n=2), "Lower Reservoir": pst.Layering(n=2)})
 )
 
 p = grid.properties
@@ -57,7 +71,7 @@ result = case.run(progress=True)
 Exported Python names:
 
 ```python
-Grid, Gridding, Layering, Spherical,
+Grid, HorizonSpec, WellTie, Layering, Spherical,
 PropertyStore, PropertyHandle, PropertyPipelineSpec,
 Var, WellLogSpec, DistributionSpec, CoKriging,
 UpscaleRecipeBuilder, SgsRecipe, distributions, upscale,
@@ -1238,11 +1252,11 @@ surface and the first notebook-facing workflow facade:
 
 ```python
 petekstatic.__all__ == [
-    "CoKriging", "DistributionSpec", "Grid", "Gridding", "Layering",
+    "CoKriging", "DistributionSpec", "Grid", "HorizonSpec", "Layering",
     "PropertyHandle", "PropertyPipeline", "PropertyPipelineSpec",
     "PropertyStore", "SgsRecipe", "Spherical", "StaticModel",
     "UpscaleRecipeBuilder", "Var", "VolumeCase", "VolumeResult",
-    "WellLog", "WellLogSpec",
+    "WellTie", "WellLog", "WellLogSpec",
     "__version__", "build_flat_model",
     "distributions", "upscale",
 ]

@@ -48,7 +48,7 @@ jobs:
       - name: build release wheel
         run: maturin build --release --out dist
       - name: install wheel
-        run: pip install --find-links dist --no-index petekstatic
+        run: python -m pip install dist/*.whl
       - name: pytest (wheel surface)
         run: pytest python/tests -q
       - name: import + build_flat_model smoke
@@ -81,7 +81,10 @@ jobs:
       - name: build release wheel
         run: maturin build --release --out dist
       - name: install wheel
-        run: pip install --find-links dist --no-index petekstatic
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem dist -Filter *.whl | Select-Object -First 1
+          python -m pip install $wheel.FullName
       - name: import + build_flat_model smoke
         shell: python
         run: |

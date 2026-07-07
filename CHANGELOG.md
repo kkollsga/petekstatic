@@ -6,7 +6,7 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
-## [0.1.3] - 2026-07-07
+## [0.1.4] - 2026-07-07
 
 ### Added
 - Added the first petekStatic-owned Python static workflow facade:

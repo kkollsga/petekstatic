@@ -171,35 +171,45 @@ pub struct PropertyPipeline {
     unbounded_search: bool,
 }
 
+struct PipelineBuildConfig<'a> {
+    name: &'a str,
+    wells: &'a [CoreWellLog],
+    method: UpscaleMethod,
+    model: VariogramModel,
+    range_m: f64,
+    minor_m: f64,
+    vertical_m: f64,
+    azimuth: f64,
+    sill: f64,
+    nugget: f64,
+    seed: u64,
+    propagate: bool,
+    allow_mean_fill: bool,
+    max_neighbours: Option<usize>,
+    radius_m: Option<f64>,
+    unbounded_search: bool,
+}
+
 impl PropertyPipeline {
-    fn build_inner(
-        name: &str,
-        wells: &[CoreWellLog],
-        method: UpscaleMethod,
-        model: VariogramModel,
-        range_m: f64,
-        minor_m: f64,
-        vertical_m: f64,
-        azimuth: f64,
-        sill: f64,
-        nugget: f64,
-        seed: u64,
-        propagate: bool,
-        allow_mean_fill: bool,
-        max_neighbours: Option<usize>,
-        radius_m: Option<f64>,
-        unbounded_search: bool,
-    ) -> PyResult<CorePropertyPipeline> {
-        let variogram =
-            AnisotropicVariogram::new(model, nugget, sill, range_m, minor_m, vertical_m, azimuth)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let mut pipe = CorePropertyPipeline::new(name.to_string()).upscale(wells.to_vec(), method);
-        if propagate {
-            let mut gaussian = Gaussian::new(variogram, seed);
-            if allow_mean_fill {
+    fn build_inner(config: &PipelineBuildConfig<'_>) -> PyResult<CorePropertyPipeline> {
+        let variogram = AnisotropicVariogram::new(
+            config.model,
+            config.nugget,
+            config.sill,
+            config.range_m,
+            config.minor_m,
+            config.vertical_m,
+            config.azimuth,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let mut pipe = CorePropertyPipeline::new(config.name.to_string())
+            .upscale(config.wells.to_vec(), config.method);
+        if config.propagate {
+            let mut gaussian = Gaussian::new(variogram, config.seed);
+            if config.allow_mean_fill {
                 gaussian = gaussian.allow_mean_fill();
             }
-            match (max_neighbours, radius_m) {
+            match (config.max_neighbours, config.radius_m) {
                 (Some(max), Some(radius)) => {
                     gaussian = gaussian.with_search(max, radius);
                 }
@@ -210,7 +220,7 @@ impl PropertyPipeline {
                     ));
                 }
             }
-            if unbounded_search {
+            if config.unbounded_search {
                 gaussian = gaussian.with_unbounded_search();
             }
             pipe = pipe.propagate(gaussian);
@@ -307,11 +317,11 @@ impl PropertyPipeline {
         let method_value = parse_upscale_method(method)?;
         let model_value = parse_variogram_model(variogram_model)?;
         let core_wells: Vec<_> = wells.iter().map(|w| w.inner.clone()).collect();
-        let inner = Self::build_inner(
-            &name,
-            &core_wells,
-            method_value,
-            model_value,
+        let inner = Self::build_inner(&PipelineBuildConfig {
+            name: &name,
+            wells: &core_wells,
+            method: method_value,
+            model: model_value,
             range_m,
             minor_m,
             vertical_m,
@@ -324,7 +334,7 @@ impl PropertyPipeline {
             max_neighbours,
             radius_m,
             unbounded_search,
-        )?;
+        })?;
         Ok(Self {
             inner,
             name,

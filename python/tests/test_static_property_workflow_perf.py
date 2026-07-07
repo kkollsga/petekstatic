@@ -14,11 +14,10 @@ petekio = pytest.importorskip("petekio")
 
 
 SYNTH_FIXTURE = (
-    Path(__file__).resolve().parents[3]
-    / "petekIO"
+    Path(__file__).resolve().parents[2]
     / "tests"
     / "fixtures"
-    / "wells_petro"
+    / "wells"
 )
 CONFIDENTIAL_DATA = Path(
     os.environ.get(

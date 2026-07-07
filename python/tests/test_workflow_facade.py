@@ -425,6 +425,8 @@ def test_recipe_execution_uses_petekio_project_log_resolver():
         / "fixtures"
         / "wells_petro"
     )
+    if not root.is_dir():
+        pytest.skip(f"petekIO fixture not available: {root}")
     project = petekio.Project.load(
         root,
         aliases={

@@ -195,9 +195,23 @@ jobs:
         with: { pattern: wheels-*, merge-multiple: true, path: dist }
       - uses: pypa/gh-action-pypi-publish@release/v1.14
 
+  verify-pypi:
+    name: verify PyPI availability
+    needs: [prepare, publish-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Wait until pip can install this release
+        run: python scripts/wait_for_pypi.py petekstatic "${{ needs.prepare.outputs.version }}"
+
   github-release:
     name: GitHub Release
-    needs: [prepare, publish-crate, publish-pypi]
+    needs: [prepare, publish-crate, verify-pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write

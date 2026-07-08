@@ -6,6 +6,15 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-07-08
+
+### Changed
+- Updated the Rust and Python dependency floors to `petekio` 0.3.7 and
+  `petektools` 0.2.6 so petekStatic consumes the released point-edge semantics,
+  structured mesh surface support, and 2-D topology-grid viewer QA.
+- Hardened CI/release wheel install checks with retrying binary-only installs
+  and added a PyPI visibility verification job before GitHub Release creation.
+
 ## [0.1.9] - 2026-07-08
 
 ### Changed

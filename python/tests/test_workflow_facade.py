@@ -432,7 +432,7 @@ def test_recipe_execution_uses_petekio_project_log_resolver():
     )
     if not root.is_dir():
         pytest.skip(f"petekIO fixture not available: {root}")
-    project = petekio.Project.load(
+    project = petekio.Project.import_data(
         root,
         aliases={
             "PHIE": ["PHI", "PHIE"],

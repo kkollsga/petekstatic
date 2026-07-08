@@ -6,6 +6,13 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-08
+
+### Changed
+- Updated the Rust and Python dependency floor to `petekio` 0.3.5 so
+  petekStatic consumes the released project organization and import/load split
+  from the DATA layer.
+
 ## [0.1.7] - 2026-07-07
 
 ### Changed

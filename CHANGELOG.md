@@ -6,6 +6,13 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-07-08
+
+### Changed
+- Updated the Rust and Python dependency floors to `petekio` 0.3.6 and
+  `petektools` 0.2.5 so petekStatic consumes the released calculated-log,
+  interpolation, and standardized object-history APIs.
+
 ## [0.1.8] - 2026-07-08
 
 ### Changed

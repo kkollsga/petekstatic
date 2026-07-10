@@ -6,11 +6,24 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-10
+
 ### Changed
 - The legacy `petekstatic::data` petekIO bridge is now behind the opt-in
   `petekio-adapter` Cargo feature. The default geomodel core and Python wheel no
   longer depend on petekIO; petekSim owns full-stack composition. Existing Rust
   callers can enable the feature during the compatibility window.
+- CI now builds the ABI3 wheel once for the Python 3.10–3.14 test matrix and
+  explicitly verifies that the default wheel imports and builds a model without
+  petekIO installed. Rust gates exercise both the optional adapter and the
+  dependency-minimal core.
+- Release wheels and the source distribution now build in parallel with the
+  unchanged release gates. Trusted PyPI publishing retries transient failures,
+  and the workflow reports trigger-to-installable-wheel time.
+
+## [0.1.11] - 2026-07-08
+
+### Changed
 - The petekTools floor is `0.2.7` for the topology-aware kernels and corrected
   viewer behaviour used by the geomodel workflow.
 

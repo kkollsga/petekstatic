@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   prepare:
     name: resolve release
@@ -24,6 +28,7 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      started_at: ${{ steps.release.outputs.started_at }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,6 +63,7 @@ jobs:
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "started_at=$(date +%s)" >> "$GITHUB_OUTPUT"
 
   gates:
     name: gates (fmt / clippy / test)
@@ -74,9 +80,9 @@ jobs:
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy (warnings = errors)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: test
-        run: cargo test --workspace
+        run: cargo test --workspace --all-features
 
   create-tag:
     name: create release tag
@@ -116,7 +122,7 @@ jobs:
 
   build-wheels:
     name: wheels (${{ matrix.os }}-${{ matrix.target }})
-    needs: [prepare, create-tag]
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -130,7 +136,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
       - uses: actions/setup-python@v6
         with: { python-version: "3.x" }
       - name: Build wheels
@@ -139,6 +145,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist
           manylinux: auto
+          sccache: "true"
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
@@ -146,12 +153,12 @@ jobs:
 
   sdist:
     name: build sdist
-    needs: [prepare, create-tag]
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
       - name: Build sdist
         uses: PyO3/maturin-action@v1.51.0
         with:
@@ -185,7 +192,7 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI (trusted publishing)
-    needs: [build-wheels, sdist]
+    needs: [create-tag, build-wheels, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -193,7 +200,33 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { pattern: wheels-*, merge-multiple: true, path: dist }
-      - uses: pypa/gh-action-pypi-publish@release/v1.14
+      - id: publish_1
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@release/v1.14
+        with:
+          skip-existing: true
+      - if: steps.publish_1.outcome == 'failure'
+        run: sleep 10
+      - id: publish_2
+        if: steps.publish_1.outcome == 'failure'
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@release/v1.14
+        with:
+          skip-existing: true
+      - if: steps.publish_1.outcome == 'failure' && steps.publish_2.outcome == 'failure'
+        run: sleep 30
+      - id: publish_3
+        if: steps.publish_1.outcome == 'failure' && steps.publish_2.outcome == 'failure'
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@release/v1.14
+        with:
+          skip-existing: true
+      - name: Require a successful publish attempt
+        if: always()
+        run: |
+          test "${{ steps.publish_1.outcome }}" = success \
+            || test "${{ steps.publish_2.outcome }}" = success \
+            || test "${{ steps.publish_3.outcome }}" = success
 
   verify-pypi:
     name: verify PyPI availability
@@ -208,6 +241,12 @@ jobs:
           python-version: "3.12"
       - name: Wait until pip can install this release
         run: python scripts/wait_for_pypi.py petekstatic "${{ needs.prepare.outputs.version }}"
+
+      - name: Report trigger-to-install time
+        run: |
+          elapsed=$(( $(date +%s) - ${{ needs.prepare.outputs.started_at }} ))
+          echo "### Registry availability" >> "$GITHUB_STEP_SUMMARY"
+          echo "Trigger to installable wheel: $((elapsed / 60))m $((elapsed % 60))s" >> "$GITHUB_STEP_SUMMARY"
 
   github-release:
     name: GitHub Release

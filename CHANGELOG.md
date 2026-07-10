@@ -7,10 +7,12 @@ All notable changes to petekStatic are recorded here. Format follows
 ## [Unreleased]
 
 ### Changed
-- Updated the Rust and Python dependency floors to `petekio` 0.3.8 and
-  `petektools` 0.2.7 so petekStatic consumes the released topology-aware
-  `concave_hull` point-edge default and the corrected point-vs-geometry 2-D
-  viewer behaviour.
+- The legacy `petekstatic::data` petekIO bridge is now behind the opt-in
+  `petekio-adapter` Cargo feature. The default geomodel core and Python wheel no
+  longer depend on petekIO; petekSim owns full-stack composition. Existing Rust
+  callers can enable the feature during the compatibility window.
+- The petekTools floor is `0.2.7` for the topology-aware kernels and corrected
+  viewer behaviour used by the geomodel workflow.
 
 ## [0.1.10] - 2026-07-08
 

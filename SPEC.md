@@ -7,8 +7,8 @@
 > (`petekSuite/dev-docs/petek-house-style.md`). Cross-library seams + lifecycle
 > live in the suite planning graph (served by the `contract` MCP).
 
-petekStatic turns **model-ready inputs** (petekIO's `ModelInputs` / `.pproj`)
-into a populated **`StaticModel`** — a structural framework (horizons + faults +
+petekStatic turns **model-ready inputs** into a populated **`StaticModel`** — a
+structural framework (horizons + faults +
 zones), a modelling grid, per-cell property cubes — **and owns the volumetrics +
 static-uncertainty stack over it**: GRV / in-place (OOIP/OGIP) off the model,
 and Monte-Carlo regeneration over static-model realizations. petekSim (the
@@ -23,8 +23,9 @@ in-place volumes, and the MC loop over static realizations (tornado later).
 the Python product facade are petekSim's.** FVF crosses this seam **as an
 uncertain scalar input** (a validated value type), never as PVT code. Nothing
 input-data-specific (parsing, QC, interpretation) lives here; that is petekIO's
-job. We **consume** petekIO and **call** petekTools kernels; we **never** depend
-on petekSim (our downstream consumer).
+job. The default core owns its input types and **calls** petekTools kernels;
+petekIO conversion is an optional compatibility feature or lives in petekSim's
+composition root. We **never** depend on petekSim (our downstream consumer).
 
 ---
 
@@ -39,7 +40,7 @@ on petekSim (our downstream consumer).
    srs-wireframe             # the constraining wireframe (boundary+horizons+contacts)
    srs-gridder               # convergent gridder: min-curvature surface + layering
    srs-petro                 # petrophysics: log upscaling (power-law means)
-   srs-data                  # thin petekio adapter: ModelInputs -> wireframe + logs
+   srs-data                  # optional petekio-adapter compatibility feature
    srs-volumetrics           # GRV + in-place (OOIP/OGIP) + FVF value types + range validation
    srs-uncertainty           # Monte Carlo: distributions, SplitMix64, P90/P50/P10 (leaf)
    srs-spill                 # out-of-core backing mode: memory budget + k-slab spill
@@ -61,8 +62,10 @@ on petekSim (our downstream consumer).
 2. **One error enum** (`StaticError`, `thiserror`) + `Result<T>` everywhere;
    downstream composes it with a `#[from]` variant on its own enum (house §1).
    petekSim does this: `SrsError::Static(#[from] petekstatic::error::StaticError)`.
-   Upstream composes IN the same way: `StaticError::Geo(#[from] petekio::GeoError)`
-   — so `?` chains DATA→GEOMODEL→SIM and `source()` reaches the origin.
+   The optional `petekio-adapter` composes `StaticError::Geo(#[from]
+   petekio::GeoError)` so legacy DATA→GEOMODEL conversions retain their source
+   chain. The default geomodel core has no petekIO dependency; petekSim owns the
+   integrated composition.
 
 3. **Domain objects carry their operations** — fluent, chainable, immutable; ops
    return *new* objects, mutation is explicit `set_*`. `f64::NAN` = undefined.
@@ -115,8 +118,8 @@ volumes **m³** internally, reported in **mcm** (`1e6 m³`, GRV), **MSm³** (oil
 and **bcm** (`1e9 Sm³`, gas). Vertical is **positive-down depth** (clearly-named
 `*_m` accessors), the domain-natural framing the ruling permits, and it is the
 **one datum inside the `Wireframe`**: petekIO delivers surfaces (and well-curve
-positions) as negative-down subsea elevation, so `srs-data` **negates them at the
-ingest boundary** (`surface_depths`) onto positive-down `depth_m`, matching the
+positions) as negative-down subsea elevation, so the optional adapter **negates
+them at the ingest boundary** (`surface_depths`) onto positive-down `depth_m`, matching the
 contacts petekIO already delivers positive-down. This unifies horizons and
 contacts on one convention (so structural role assignment reads `Top` =
 shallowest correctly) and retires the coordinate-flip deferral — its blocker,
@@ -152,7 +155,7 @@ The build pipeline, ingest → framework → grid → population → model:
 
 ```
 petekIO ModelInputs (.pproj)
-   │  srs-data (thin adapter, no data processing)
+   │  petekSim composition root (or optional petekio-adapter compatibility)
    ▼
 Wireframe  {boundary, horizons, contacts}         + PetroSample logs [(tvd,φ,Sw)]
    │  warm_surface  (petekTools warm kernel; the SAME path the MC template uses — R2)

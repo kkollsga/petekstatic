@@ -25,6 +25,7 @@
 //! `run_mc` / `McSettings`, `BuildSpec`, `StaticModel`, the view bundles, …)
 //! without needing to know which module they live in.
 
+#[cfg(feature = "petekio-adapter")]
 pub mod data;
 pub mod error;
 pub mod grid;

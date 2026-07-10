@@ -17,8 +17,8 @@
 
 Conventions (house style): `Result<T> = std::result::Result<T, StaticError>`;
 per-cell cubes are `Vec<f64>` indexed by linear cell index; `NaN` = undefined;
-depths are metres, positive-down (petekIO's negative-down elevation is flipped at
-the `srs-data` ingest boundary).
+depths are metres, positive-down (the optional petekIO adapter flips upstream
+negative-down elevation at its ingest boundary).
 
 ---
 
@@ -177,13 +177,14 @@ pub enum StaticError {
     Grid(String),
     OutOfRange(String),
     CrossedSurfaces { nodes: usize, worst_m: f64 },   // R1: base crosses above the top (GRV-collapsing); opt out via with_clamp_base_to_top
-    Geo(#[from] petekio::GeoError),   // DATA→GEOMODEL seam: `?` chains through
+    #[cfg(feature = "petekio-adapter")]
+    Geo(#[from] petekio::GeoError),   // optional DATA→GEOMODEL compatibility seam
 }
 pub type Result<T> = std::result::Result<T, StaticError>;
 ```
 
-Downstream composes it: `SrsError::Static(#[from] petekstatic::error::StaticError)`
-(which transitively reaches `GeoError` too).
+Downstream composes it: `SrsError::Static(#[from] petekstatic::error::StaticError)`.
+When `petekio-adapter` is enabled, that chain also reaches `GeoError`.
 
 ## `srs-grid` — the i,j,k corner-point grid
 
@@ -328,7 +329,10 @@ pub fn net_to_gross(samples: &[NetSample]) -> f64;
 pub fn perm_bounds(/* ... */) -> (f64, f64);                          // Cardwell-Parsons bracket
 ```
 
-## `srs-data` — the thin petekIO adapter
+## Optional `petekio-adapter` compatibility feature
+
+The geomodel core has no petekIO dependency. Enable `petekio-adapter` only for
+the legacy model-ready-input conversion surface:
 
 ```rust
 pub mod adapter;    // hardness_of, InputScalar, ModelScalars::from_summary
@@ -336,6 +340,9 @@ pub mod logs;       // petro_samples(&[WellCurveInput]) -> Vec<(f64,f64,f64)>  (
 pub mod wireframe;  // assemble_wireframe(&ModelInputs) -> Result<Wireframe>
 pub mod petekio;    // re-export of the real petekio crate (the upstream seam)
 ```
+
+The integrated product composes petekIO and petekStatic in petekSim. New core
+callers should construct petekStatic-owned wireframe/model inputs directly.
 
 ## `srs-volumetrics` — GRV, in-place, FVF (relocated from petekSim 2026-07-03)
 

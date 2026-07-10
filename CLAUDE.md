@@ -12,7 +12,7 @@ static-model realizations (`StaticModelTemplate::realize`), tornado later.
 Its place in the one-way DAG (deps flow **downward only**):
 
 ```
-petekIO      DATA       → model-ready inputs (ModelInputs / .pproj)         [upstream dep]
+petekIO      DATA       → model-ready inputs (ModelInputs / .pproj)   [optional adapter]
    ↓
 petekStatic  GEOMODEL   → populated StaticModel + volumetrics/uncertainty    [THIS LIBRARY]
    ↓
@@ -89,12 +89,12 @@ dataset by *path* and *format*, never by content.
 The internal design constitution is `SPEC.md`. What's decided (by the suite, in
 the graph):
 
-- **Consumes, never reaches up.** petekStatic reads petekIO's **model-ready
-  inputs** (the `ModelInputs` seam / `.pproj` container) and calls **petekTools**
-  numeric kernels (gridding/kriging/warm-start). It depends on petekIO and
-  petekTools; it **never** depends on petekSim (its downstream consumer). No
-  cycles, no sideways code-sharing — share conventions, convert small types at
-  the seam (e.g. the FVF value types duplicated from/into srs-pvt).
+- **Consumes, never reaches up.** The geomodel core calls **petekTools** numeric
+  kernels (gridding/kriging/warm-start) and stays independent of petekIO.
+  `petekio-adapter` is an opt-in compatibility seam for `ModelInputs`; the
+  integrated conversion lives at petekSim, which already depends on both
+  libraries. petekStatic **never** depends on petekSim. No cycles or sideways
+  sharing — convert small types at the composition seam.
 - **Produces a `StaticModel` that owns its volumes** (`decision_layer_charters`):
   framework + grid + cubes + zones + contacts + provenance, with `in_place()`
   and the MC-regeneration seam (`StaticModelTemplate::realize(&RealizationDraw)`,

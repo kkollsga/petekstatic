@@ -1286,5 +1286,4 @@ The cross-library seams here (`StaticModel` accessors, `RealizationDraw`, the
 regeneration API, `solve_surface_seeded`/`KernelSurface`) are ratified contracts:
 changing a signature requires (1) an edit to this file, (2) coordinator
 (petekSuite) + consumer (petekSim) sign-off. Library-internal signatures are
-petekStatic's own call. The whole file locks at the 0.1 release
-(`task_petekstatic_release_0_1`).
+petekStatic's own call. The whole file has been locked since the 0.1 release.

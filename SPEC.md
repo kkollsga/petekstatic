@@ -773,8 +773,9 @@ section-edge centroid collapse), so it is a hard convention, not a caution.
   additively (`task_petekstatic_zones_faults`); `RealizationDraw` absorbs
   structural sampling via its `#[non_exhaustive]` + typed-Option design.
 
-Open: kernel unification (`decision_gridder_kernel_unification` /
-`task_petektools_natural_dip_boundary`) — until then §7b's type guard stands.
+Kernel unification is closed (`decision_gridder_kernel_unification` /
+`task_petektools_natural_dip_boundary`); §7b retains the type guard for
+provenance/staleness rather than differing kernel fixed points.
 
 ---
 
@@ -796,11 +797,10 @@ SGS + collocated cokriging) on both the builder and the template, with the
 driver + tornado (§7d, `task_peteksim_mc_structured` / `task_peteksim_tornado`) —
 `run_structured_mc` / `McInputs` / `McResult` / `aggregate_field` / `tornado`.
 
-**Planned:** real boundary rings
-(`task_petekstatic_boundary_rings`, ready); multi-zone + faults + **per-zone**
-geostatistical population (P5 `task_petekstatic_zones_faults`); `realize_into`
-buffer recycling; a petekStatic-side PyO3 mirror (today Python access is via
-petekSim's facade); 0.1 release (`task_petekstatic_release_0_1`).
+**Remaining:** the P5 faulted-gridding remainder (split pillars + throw + NNC;
+`task_petekstatic_zones_faults`) and the explicit out-of-core deferrals in §10.
+Boundary rings, multi-zone/per-zone population, `realize_into`, the PyO3 facade,
+and the first release have landed.
 
 ---
 
@@ -898,7 +898,7 @@ spilled builds (logs/trend/SGS pipelines, or collapse) fall back to build-then-s
 - `task_relocate_refine_orchestration` (this wave) · `task_peteksim_mc_structured`
   (retargeted) · `task_peteksim_tornado` (retargeted) ·
   `task_petekstatic_zones_faults` · `task_petekstatic_property_modelling` ·
-  `task_petekstatic_boundary_rings` · `task_petekstatic_release_0_1`
+  `task_petekstatic_boundary_rings`
 - `decision_layer_charters` (the 2026-07-03 re-scope) ·
   `decision_staticmodel_regen_seam` (the ratified seam) ·
   `decision_gridder_kernel_unification` · `decision_srs_core_seam_pathdeps`

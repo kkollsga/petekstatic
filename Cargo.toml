@@ -9,18 +9,25 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 # The published crate ships no test/example data (house rule).
-exclude = ["/tests", "/examples", "/dev-docs", "/inbox", "/docs", "/python", "/dist-launch"]
+exclude = ["/tests", "/examples", "/dev-docs", "/docs", "/python", "/dist-launch"]
 
 [lints]
 workspace = true
 
+[features]
+default = []
+# Compatibility bridge for Rust callers that still consume petekIO's
+# ModelInputs through `petekstatic::data`. The geomodel core and Python wheel do
+# not need this edge; petekSim is the composition root for the full stack.
+petekio-adapter = ["dep:petekio"]
+
 [dependencies]
-# petekStatic's single error type (house-style §1); petekio's GeoError and
-# petekTools' AlgoError compose into StaticError via #[from].
+# petekStatic's single error type (house-style §1); the optional adapter's
+# GeoError and petekTools' AlgoError compose into StaticError via #[from].
 thiserror.workspace = true
-# CROSS-REPO family deps (crates.io): the DATA layer upstream + the horizontal
-# TOOLKIT (gridding kernels / units / pproj). One-directional DAG edges.
-petekio.workspace = true
+# The DATA-layer adapter is a compatibility feature, not a geomodel-core edge.
+petekio = { workspace = true, optional = true }
+# Horizontal TOOLKIT dependency (gridding / geostat / units / storage).
 petektools.workspace = true
 # Config-layer serde (R7): the declarative build/MC config values round-trip as
 # scenario files; the derives live on the value types across the modules.
@@ -72,7 +79,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 # BSL-1.1 declared via its SPDX identifier (BUSL-1.1). The full text ships as the
 # repo-root LICENSE; the SPDX id is what crates.io / PyPI surface. (A workspace-
@@ -84,14 +91,13 @@ rust-version = "1.80"
 
 [workspace.dependencies]
 # The consolidated library crate (the py binding crate depends on it).
-petekstatic = { path = ".", version = "0.1.11" }
+petekstatic = { path = ".", version = "0.1.12" }
 # CROSS-REPO family deps: resolved from crates.io (the family is published; the
 # dev-only [patch.crates-io] was removed at launch).
 # petekTools (pure-leaf toolkit, downstream DAG edge): gridding kernels
 # (ConvergentGridder / warm-start), units, and the pproj container.
 petektools = "0.2.7"
-# petekio (DATA layer): the upstream input-data crate. Its `GeoError` composes
-# into `StaticError` via `#[from]` so `?` chains DATA→GEOMODEL at the seam.
+# petekio (DATA layer): used only by the optional `petekio-adapter` feature.
 petekio = "0.3.8"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

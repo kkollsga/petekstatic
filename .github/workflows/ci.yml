@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: fmt / clippy / test
@@ -22,14 +26,39 @@ jobs:
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy (warnings = errors)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: test
-        run: cargo test --workspace
+        run: cargo test --workspace --all-features
+      - name: geomodel core has no petekIO edge
+        run: |
+          cargo tree -p petekstatic --no-default-features -e normal > /tmp/petekstatic-core-tree.txt
+          if grep -q 'petekio v' /tmp/petekstatic-core-tree.txt; then
+            echo "petekIO leaked into the default geomodel core" >&2
+            exit 1
+          fi
+
+  wheel-build:
+    name: build abi3 wheel once
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - name: install maturin
+        run: pip install maturin
+      - name: build release wheel
+        run: maturin build --release --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-abi3-wheel
+          path: dist/*.whl
 
   wheel:
-    # Build the abi3-py310 wheel and install + pytest it on each interpreter so
-    # a per-version link/ABI break surfaces here, not for users.
-    name: wheel build + pytest (py ${{ matrix.python-version }})
+    name: same abi3 wheel + pytest (py ${{ matrix.python-version }})
+    needs: wheel-build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -37,16 +66,16 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.1
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
-      - name: install maturin + pytest
-        run: pip install maturin pytest
-      - name: build release wheel
-        run: maturin build --release --out dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-abi3-wheel
+          path: dist
+      - name: install pytest
+        run: pip install pytest
       - name: install wheel
         run: |
           for attempt in 1 2 3 4 5 6; do
@@ -58,10 +87,12 @@ jobs:
           done
       - name: pytest (wheel surface)
         run: pytest python/tests -q
-      - name: import + build_flat_model smoke
+      - name: import without petekIO + build_flat_model smoke
         run: |
           python - <<'PY'
+          import importlib.util
           import petekstatic
+          assert importlib.util.find_spec("petekio") is None
           m = petekstatic.build_flat_model()
           ip = m.in_place(boi=1.25)
           assert ip["ooip_sm3"] > 0.0

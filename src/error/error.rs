@@ -53,6 +53,7 @@ pub enum StaticError {
     /// composed across the seam so `?` chains DATA→GEOMODEL and `source()`
     /// reaches the origin (house-style §1). This transitively lets petekSim's
     /// `SrsError` reach `GeoError` too (it already has `#[from] StaticError`).
+    #[cfg(feature = "petekio-adapter")]
     #[error(transparent)]
     Geo(#[from] petekio::GeoError),
 

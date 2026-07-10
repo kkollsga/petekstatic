@@ -1,3 +1,5 @@
+#![cfg(feature = "petekio-adapter")]
+
 //! Integration tests against the REAL `petekio = "0.2.1"` crate — petekio's GATE-0
 //! verification (their "integration-tests-required" note). Each test exercises one
 //! requirement of the locked `ModelInputs` contract end-to-end, from a real `GeoData`

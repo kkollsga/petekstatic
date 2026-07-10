@@ -12,7 +12,7 @@ static-model realizations (`StaticModelTemplate::realize`), tornado later.
 Its place in the one-way DAG (deps flow **downward only**):
 
 ```
-petekIO      DATA       → model-ready inputs (ModelInputs / .pproj)         [upstream dep]
+petekIO      DATA       → model-ready inputs (ModelInputs / .pproj)   [optional adapter]
    ↓
 petekStatic  GEOMODEL   → populated StaticModel + volumetrics/uncertainty    [THIS LIBRARY]
    ↓
@@ -24,25 +24,21 @@ petekTools   TOOLKIT    → numeric kernels (gridding/kriging/warm-start) + unit
 The two committed sources of truth are **`SPEC.md`** (design constitution +
 architecture) and **`API.md`** (the public API contract; locks fully at 0.1) at
 the repo root — the petek family house style (canonically
-`petekSuite/dev-docs/petek-house-style.md`), same as petekIO/petekSim. The
-dev-docs + inbox + skills system below is local working state — see
-`dev-docs/README.md` and `inbox/README.md` for the canonical maps.
+`petekSuite/dev-docs/petek-house-style.md`), same as petekIO/petekSim. Agent
+ownership, actions, graph writes, GitHub Actions operations, and releases are
+managed centrally by petekSuite; this repository keeps only its technical
+contracts, tests, designs, plans, and benchmark records.
 
 ## Where petekStatic is today
 
-A **nine-crate Cargo workspace, built and green** (extracted from petekSim
-2026-07-01; volumetrics/uncertainty relocated in 2026-07-03's static lift):
-`petekstatic-error` · `srs-grid` · `srs-gridder` · `srs-petro` · `srs-wireframe`
-· `srs-data` · `srs-volumetrics` · `srs-uncertainty` · `srs-model` (top of DAG:
-the `StaticModel` aggregate + builder + the ratified MC-regeneration seam).
-petekSim's `srs-core` consumes these across the repo seam as path deps and keeps
-only a thin refine facade + the analytic box path.
-
-The repo is a **local git repo without a GitHub remote** — `phased-plan` runs
-with local commits (branch/PR/CI steps activate when a remote exists);
-`release` activates at the 0.1 cut (`task_petekstatic_release_0_1`). The MC
-driver over the template (`task_peteksim_mc_structured`, retargeted here) and
-tornado (`task_peteksim_tornado`) are petekStatic's next uncertainty work.
+A **single consolidated Rust crate plus its PyO3 binding crate, built and
+published**. The modules preserve the historical layer boundaries (`error`,
+`grid`, `gridder`, `petro`, `wireframe`, `data`, `volumetrics`, `uncertainty`,
+`spill`, `model`), with `StaticModel` + its builder/template/MC surface at the
+top of the internal DAG. petekSim consumes the published crate and keeps the
+product-facing composition facade. The repository has a GitHub remote and thin
+repo-local CI/release workflows; petekSuite is the sole Actions and publishing
+authority.
 
 ## Data — test against `a local real-dataset folder`, never leak it into the repo
 
@@ -63,9 +59,8 @@ dataset by *path* and *format*, never by content.
 
 ## Working style
 
-- **Keep each response under 400 tokens.** For any long output, write it to a
-  file (`dev-docs/temp/`, >1-day purge) and tell me the path instead of printing
-  it.
+- **Keep each response under 400 tokens.** For long output, use the coordinator's
+  `petekSuite/dev-docs/temp/` scratch area and report the path.
 - **Reproduce before fixing / claiming.** Before changing code, reproduce the
   issue and confirm the exact root cause with evidence. Don't apply a fix until
   the cause is verified. Confirm cross-library facts against the graph or the
@@ -89,12 +84,12 @@ dataset by *path* and *format*, never by content.
 The internal design constitution is `SPEC.md`. What's decided (by the suite, in
 the graph):
 
-- **Consumes, never reaches up.** petekStatic reads petekIO's **model-ready
-  inputs** (the `ModelInputs` seam / `.pproj` container) and calls **petekTools**
-  numeric kernels (gridding/kriging/warm-start). It depends on petekIO and
-  petekTools; it **never** depends on petekSim (its downstream consumer). No
-  cycles, no sideways code-sharing — share conventions, convert small types at
-  the seam (e.g. the FVF value types duplicated from/into srs-pvt).
+- **Consumes, never reaches up.** The geomodel core calls **petekTools** numeric
+  kernels (gridding/kriging/warm-start) and stays independent of petekIO.
+  `petekio-adapter` is an opt-in compatibility seam for `ModelInputs`; the
+  integrated conversion lives at petekSim, which already depends on both
+  libraries. petekStatic **never** depends on petekSim. No cycles or sideways
+  sharing — convert small types at the composition seam.
 - **Produces a `StaticModel` that owns its volumes** (`decision_layer_charters`):
   framework + grid + cubes + zones + contacts + provenance, with `in_place()`
   and the MC-regeneration seam (`StaticModelTemplate::realize(&RealizationDraw)`,
@@ -119,10 +114,11 @@ the graph):
 cargo build --all-features
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace             # Rust unit + golden/analytic tests
+cargo test --workspace --all-features  # Rust unit + golden/analytic tests
+cargo test -p petekstatic --no-default-features  # standalone geomodel core
+maturin build --release
+pytest python/tests -q
 cargo bench                         # criterion; release build, for perf only
-# Python: no petekStatic-side bindings yet — the peteksim wheel (petekSim repo)
-# is the Python surface; changes here gate on petekSim's `maturin develop` too.
 ```
 
 **Tooling discipline (don't relearn it the hard way):**
@@ -140,7 +136,7 @@ cargo bench                         # criterion; release build, for perf only
 Each pass through a file should leave it more compartmentalized than you found it.
 
 - **No bugs left behind.** Fix a pre-existing bug you encounter in the same
-  change, or surface it explicitly (a `todos.md` item) rather than stepping over
+  change, or surface it explicitly in petekSuite's central petekStatic action roll-up rather than stepping over
   it. First confirm it's a real defect, not deliberate behaviour (read the
   surrounding code/tests, check against `SPEC.md`/`API.md`).
 - **Golden / analytic tests are the safety net.** A correctness path lands with
@@ -148,8 +144,8 @@ Each pass through a file should leave it more compartmentalized than you found i
   population statistics vs an analytic expectation, log upscaling vs a hand calc,
   a `StaticModel` volumetric vs an analytic value. A new modelling step without
   such a check isn't trusted.
-- **Fixing a bug — scan for the *class*.** Probe with scratch fixtures
-  (`dev-docs/temp/`) before declaring scope.
+- **Fixing a bug — scan for the *class*.** Probe with scratch fixtures in the
+  coordinator's `dev-docs/temp/` before declaring scope.
 - A measured perf change is only a "fix" if it measurably improves perf.
 
 ## Testing doctrine — the six rules (family-wide, `petekSuite/dev-docs/designs/testing-doctrine.md`)
@@ -198,22 +194,15 @@ record numbers); **release build only**; trust `min` over `median` for sub-ms
 benches. Heavy built grids/cubes → `dev-docs/bench/out/`; the regression rows →
 `dev-docs/bench/results/results.csv`. See `dev-docs/bench/README.md`.
 
-## Inbox hygiene
+## Central control plane
 
-**Always use the inbox skills for cross-library communication** — never
-hand-read or hand-write inbox files. Incoming → **`read-inbox`** (triage
-`unread/`, lift durable info to `dev-docs/` + lean `todos.md` backlinks, route,
-archive, purge). Outgoing → **`notify`** (resolve the target under `Koding/`,
-compose per the schema, drop into its `inbox/unread/`). The canonical map is
-`inbox/README.md`. Natural correspondents:
-
-- **petekIO** — upstream dependency; the `ModelInputs` / `.pproj` seam we consume.
-- **petekTools** — upstream horizontal dep; the numeric kernels + pproj container.
-- **petekSim** — downstream consumer of the `StaticModel`.
-- **petekSuite** — the coordinator; route cross-library initiatives + planning-
-  graph contributions here.
-- **mcp-servers** — the whole ecosystem, one inbox (never resolve a name to
-  `mcp-servers/<subdir>/`).
+petekSuite owns this library's agents, actionable state, graph writes, GitHub
+Actions operations, and releases. Single-library implementation is assigned by
+the coordinator through its central `run-library-task` skill; cross-library work
+uses `coordinate`. Managed libraries communicate through directly supervised
+agents, never local inbox files. Technical plans/designs and benchmark records
+remain here when their stable paths matter; actionable state lives at
+`petekSuite/dev-docs/libraries/petekStatic/`.
 
 ## Planning graph — the cross-library source of truth
 
@@ -221,13 +210,9 @@ The petek **planning graph** (served by the `contract` MCP; homed at
 `petekSuite/research/graph/research.kgl` — the coordinator) is the single source
 of truth for the inter-library contracts
 (the `ModelInputs` seam, the `StaticModel` seam, the layered architecture),
-decisions, and open questions. Reach for it on anything cross-cutting — read the
-contract before changing a shared seam; record blocking issues and choices
-there, not only in local docs. Contribute **without cluttering**: runtime types
-only (`Question` / `Decision` / `Artifact` / `Task` — never the managed research
-nodes); **MERGE on id, never CREATE**; one node per concept; stamp `git_sha` +
-`modified_by='petekstatic'`. No direct graph access → **route it through the
-inbox to petekSuite** (the coordinator), who curates it in.
+decisions, and open questions. Read it before changing a shared seam. The owning
+agent reports evidence and proposed updates to petekSuite; the coordinator owns
+all graph writes and provenance.
 
 ## Commits & releases
 
@@ -235,26 +220,17 @@ Commit format: `type: short description` (`feat`, `fix`, `docs`, `refactor`,
 `test`, `chore`). Update `CHANGELOG.md` `[Unreleased]` for user-visible changes;
 skip for internal refactors, CI, test-only, formatting.
 
-**Pushing requires explicit, in-the-moment approval.** Default is *don't push*.
-Approval is one-shot — it covers exactly that one `git push` and does not carry
-to a later commit or branch.
-
-**Exception — invoking the `release` skill IS push authorization for that
-release** (the publish-triggering `main` push + its CI fix-and-push loop),
-scoped to that one run. Every pre-push safeguard still applies. (First release =
-`task_petekstatic_release_0_1`; a GitHub remote lands with it.)
+Pushing, Actions dispatch, version bumps, tags, and publishing are coordinator
+operations. Pushing requires explicit in-the-moment approval unless the user
+invokes petekSuite's central `release` skill, whose authorization is scoped to
+that release run. Library agents never publish independently.
 
 Version source of truth: root `Cargo.toml` `[workspace.package] version` (or the
 single crate's `version`) — one bump per push, all workspace members in lockstep.
 
-## The skills (wired into these rules)
+## Coordinator execution
 
-- **`phased-plan`** — run any non-trivial, multi-step change as gated phases.
-  Don't use generic plan mode for large work.
-- **`add-todo`** — the single authority on `todos.md` entry shape; capture work
-  as a lean backlink + a `plans/` detail doc.
-- **`dev-docs-cleanup`** — purge the time-boxed dirs + a todos-driven tidy. Run
-  before a new phased-plan and at the end of a release.
-- **`read-inbox`** / **`notify`** — the receive / send sides of the inbox.
-- **`release`** — ship: goal-check, gate, reconcile `API.md`, bump, promote
-  CHANGELOG, publish, tidy. Run only when asked.
+Use petekSuite's central `run-library-task` profile for petekStatic. Large
+changes get owner-namespaced central plans and independently green phases. The
+coordinator verifies gates, records todo/graph state, and alone operates Actions
+or the central `release` train.

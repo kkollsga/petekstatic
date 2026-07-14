@@ -6,6 +6,8 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-07-14
+
 ### Added
 - Added oriented model view frames: `Georef`/`GridFrame` now carry additive
   `rotation_deg` (counter-clockwise east-to-I) and `yflip`, with exact forward /
@@ -20,6 +22,10 @@ All notable changes to petekStatic are recorded here. Format follows
 ### Changed
 - Enabled serde_json's exact float-roundtrip parser for bundle coordinates, so
   large rotated world coordinates survive direct JSON wire round-trips bit-for-bit.
+- Raised the Rust and Python petekTools floor to 0.2.15, the first release that
+  provides the canonical oriented-lattice forward/inverse transforms used by
+  these APIs. Schema-v6 fields are additive/defaulted: pre-v6 sections remain
+  readable and zero-orientation payloads retain their legacy serialized shape.
 
 ## [0.1.12] - 2026-07-10
 

@@ -154,6 +154,31 @@ impl BuildSpec {
         self
     }
 
+    /// Register an oriented world georeference. `rotation_deg` is
+    /// counter-clockwise from world +X/east to positive I; `yflip` reverses J.
+    /// Invalid values clear the georeference, matching [`Self::with_georef`].
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_oriented_georef(
+        mut self,
+        origin_x: f64,
+        origin_y: f64,
+        spacing_x: f64,
+        spacing_y: f64,
+        rotation_deg: f64,
+        yflip: bool,
+    ) -> Self {
+        self.georef = Georef::oriented(
+            origin_x,
+            origin_y,
+            spacing_x,
+            spacing_y,
+            rotation_deg,
+            yflip,
+        );
+        self
+    }
+
     /// Register the world areal boundary ring (first == last point to close).
     /// An empty ring clears it.
     #[must_use]

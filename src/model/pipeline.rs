@@ -320,6 +320,16 @@ impl PropertyPipeline {
     /// areal lattice is smaller than `2x2` columns or degenerate, or an upscale
     /// average rejects a sample set.
     pub fn upscale_cells(&self, grid: &Grid) -> Result<(Vec<f64>, UpscaleQc), StaticError> {
+        self.upscale_cells_with_georef(grid, None)
+    }
+
+    /// World-frame variant used by model builders/templates. The public
+    /// [`Self::upscale_cells`] remains the exact local-frame compatibility path.
+    fn upscale_cells_with_georef(
+        &self,
+        grid: &Grid,
+        georef: Option<Georef>,
+    ) -> Result<(Vec<f64>, UpscaleQc), StaticError> {
         let (wells, method) = self.upscale.as_ref().ok_or_else(|| {
             StaticError::InvalidInput(format!(
                 "property '{}' has no upscale step (call .upscale(...))",
@@ -333,11 +343,17 @@ impl PropertyPipeline {
         let mut log_values: Vec<f64> = Vec::new();
 
         for well in wells {
-            // Snap the well to its areal column via the reconstructed lattice.
-            let Some((fi, fj)) = lattice.xy_to_ij(well.x, well.y) else {
+            // Convert a world well through the model's exact oriented frame into
+            // the local lattice where cell corners and kernels live.
+            let intrinsic = match georef {
+                Some(g) => g.world_to_intrinsic(well.x, well.y),
+                None => lattice.xy_to_ij(well.x, well.y),
+            };
+            let Some((raw_fi, raw_fj)) = intrinsic else {
                 continue;
             };
-            let (fi, fj) = (fi.round(), fj.round());
+            let local_xy = lattice_intrinsic_to_world(&lattice, raw_fi, raw_fj);
+            let (fi, fj) = (raw_fi.round(), raw_fj.round());
             if fi < 0.0 || fj < 0.0 {
                 continue;
             }
@@ -359,7 +375,7 @@ impl PropertyPipeline {
                 // at the well position assigns each sample to the zone its depth truly
                 // falls in. A well exactly at the centroid recovers the old means
                 // (bilinear at (0.5, 0.5) == the 4-corner mean).
-                let (t, b) = cell_depth_at_xy(&cell, well.x, well.y);
+                let (t, b) = cell_depth_at_xy(&cell, local_xy.0, local_xy.1);
                 let (lo, hi) = (t.min(b), t.max(b));
                 let in_range: Vec<f64> = well
                     .samples
@@ -405,7 +421,7 @@ impl PropertyPipeline {
         grid: &mut Grid,
         georef: Option<Georef>,
     ) -> Result<PropertyReport, StaticError> {
-        let (cells, qc) = self.upscale_cells(grid)?;
+        let (cells, qc) = self.upscale_cells_with_georef(grid, georef)?;
         let propagated = match &self.propagate {
             None => {
                 grid.properties_mut().set(Property {
@@ -468,7 +484,7 @@ impl PropertyPipeline {
     ) -> Result<PropertyReport, StaticError> {
         let dims = grid.dims();
         let (ni, nj, nk) = (dims.ni, dims.nj, dims.nk);
-        let (mut cells, _) = self.upscale_cells(grid)?;
+        let (mut cells, _) = self.upscale_cells_with_georef(grid, georef)?;
         // Scope conditioning to the zone: drop any upscaled cell outside k_range so
         // the QC + the SGS normal-score transform reflect only this zone's data.
         for k in 0..nk {
@@ -554,6 +570,22 @@ fn cell_depth_at_xy(cell: &crate::grid::Cell, wx: f64, wy: f64) -> (f64, f64) {
     let top = bilinear(c[0].z, c[1].z, c[2].z, c[3].z);
     let bottom = bilinear(c[4].z, c[5].z, c[6].z, c[7].z);
     (top, bottom)
+}
+
+/// Place fractional intrinsic coordinates through petekTools' canonical lattice
+/// transform without reimplementing rotation math in petekStatic.
+fn lattice_intrinsic_to_world(lat: &Lattice, fi: f64, fj: f64) -> (f64, f64) {
+    Lattice {
+        xori: lat.xori,
+        yori: lat.yori,
+        xinc: lat.xinc * fi,
+        yinc: lat.yinc * fj,
+        ncol: 2,
+        nrow: 2,
+        rotation_deg: lat.rotation_deg,
+        yflip: lat.yflip,
+    }
+    .node_xy(1, 1)
 }
 
 /// Reconstruct the areal SGS lattice from the grid's top-layer cell centroids
@@ -685,9 +717,16 @@ fn propagate_sgs_into(
         None => None,
         Some((trend, corr)) => {
             let sample_lattice = match georef {
-                Some(gr) if trend.is_georeferenced() => {
-                    Lattice::regular(gr.origin_x, gr.origin_y, gr.spacing_x, gr.spacing_y, ni, nj)
-                }
+                Some(gr) if trend.is_georeferenced() => Lattice {
+                    xori: gr.origin_x,
+                    yori: gr.origin_y,
+                    xinc: gr.spacing_x,
+                    yinc: gr.spacing_y,
+                    ncol: ni,
+                    nrow: nj,
+                    rotation_deg: gr.rotation_deg,
+                    yflip: gr.yflip,
+                },
                 _ => lattice.clone(),
             };
             let field = trend.resample_to(&sample_lattice)?;

@@ -77,4 +77,8 @@ pub use volume::VolumeBundle;
 ///   The default renders dip-following trapezoids; `sugar_cube=true` flattens the edge
 ///   arrays to the centroid trace. **Frozen field names** (a concurrent viewer consumes
 ///   them) — no rename without a coordinated bump.
-pub const SCHEMA_VERSION: u32 = 5;
+///
+/// **v5** added section zone ids. **v6** adds intrinsic rotation/y-flip to
+/// [`GridFrame`] and an optional frame on section bundles; zero/default frames
+/// keep the exact legacy serialized shape.
+pub const SCHEMA_VERSION: u32 = 6;

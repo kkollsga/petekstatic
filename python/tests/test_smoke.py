@@ -42,8 +42,13 @@ def test_bundles_and_zone_rollup_serialize():
     # The map + volume bundles serialize to non-empty JSON strings.
     map_json = json.loads(m.map_bundle())
     assert isinstance(map_json, dict)
+    assert map_json["schema_version"] == 6
+    # Zero/default orientation preserves the historical Frame JSON shape.
+    assert "rotation_deg" not in map_json["frame"]
+    assert "yflip" not in map_json["frame"]
 
     section_json = json.loads(
         m.intersection_bundle([[0.1, 0.5], [0.9, 0.5]])
     )
     assert isinstance(section_json, dict)
+    assert section_json["frame"] == map_json["frame"]

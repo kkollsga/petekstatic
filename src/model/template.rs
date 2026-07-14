@@ -472,12 +472,9 @@ impl StaticModelTemplate {
     ) -> Result<Self, StaticError> {
         condition_scatter(&mut stack, &frame)?;
         let g = frame.georef;
-        Ok(Self::from_horizon_stack(stack, opts)?.with_georef(
-            g.origin_x,
-            g.origin_y,
-            g.spacing_x,
-            g.spacing_y,
-        ))
+        let mut out = Self::from_horizon_stack(stack, opts)?;
+        out.spec.georef = Some(g);
+        Ok(out)
     }
 
     /// Opt into clamping a crossed base (base above top) to zero gross at the
@@ -655,6 +652,31 @@ impl StaticModelTemplate {
         spacing_y: f64,
     ) -> Self {
         self.spec.georef = Georef::new(origin_x, origin_y, spacing_x, spacing_y);
+        self
+    }
+
+    /// Register an oriented world georeference on every realized model.
+    /// `rotation_deg` is counter-clockwise from world +X/east to positive I;
+    /// `yflip` reverses J. Grid kernels remain in their local frame.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_oriented_georef(
+        mut self,
+        origin_x: f64,
+        origin_y: f64,
+        spacing_x: f64,
+        spacing_y: f64,
+        rotation_deg: f64,
+        yflip: bool,
+    ) -> Self {
+        self.spec.georef = Georef::oriented(
+            origin_x,
+            origin_y,
+            spacing_x,
+            spacing_y,
+            rotation_deg,
+            yflip,
+        );
         self
     }
 
@@ -1032,7 +1054,13 @@ impl StaticModelTemplate {
             net_to_gross: draw.net_to_gross,
             water_saturation: draw.water_saturation,
         };
-        populate(grid, priors, self.logs.as_deref(), self.trend.as_ref())?;
+        populate(
+            grid,
+            priors,
+            self.logs.as_deref(),
+            self.trend.as_ref(),
+            self.spec.georef,
+        )?;
 
         // P5 per-property geostatistical pipelines, per MC mode
         // (`decision_mc_composition`).
@@ -1221,7 +1249,13 @@ impl StaticModelTemplate {
             net_to_gross: draw.net_to_gross,
             water_saturation: draw.water_saturation,
         };
-        populate(grid, priors, self.logs.as_deref(), self.trend.as_ref())?;
+        populate(
+            grid,
+            priors,
+            self.logs.as_deref(),
+            self.trend.as_ref(),
+            self.spec.georef,
+        )?;
         let mut property_reports =
             realize_properties(&mut self.properties, grid, draw, self.spec.georef)?;
         for zd in &draw.zones {

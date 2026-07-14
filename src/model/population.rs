@@ -9,6 +9,7 @@
 
 use crate::error::StaticError;
 use crate::grid::{Grid, Property};
+use crate::model::model::Georef;
 use crate::model::trend::TrendSurface;
 use crate::petro::{upscale_porosity, upscale_sw, SwSample, WeightedSample};
 use crate::volumetrics::{populate_constant, validate_fraction, ConstantPriors, NTG, PORO, SW};
@@ -43,13 +44,14 @@ pub(crate) fn populate(
     priors: ConstantPriors,
     logs: Option<&[PetroSample]>,
     trend: Option<&TrendSurface>,
+    georef: Option<Georef>,
 ) -> Result<(), StaticError> {
     match logs {
         None => populate_constant(grid, priors),
         Some(samples) => populate_from_logs(grid, priors, samples),
     }?;
     if let Some(trend) = trend {
-        apply_areal_trend(grid, trend)?;
+        apply_areal_trend(grid, trend, georef)?;
     }
     Ok(())
 }
@@ -59,14 +61,31 @@ pub(crate) fn populate(
 /// prior/log value gives the *level*. Multipliers are mean-normalized (see
 /// [`TrendSurface`]) so the property field-mean is preserved; results are
 /// clamped to `[0, 1]`.
-fn apply_areal_trend(grid: &mut Grid, trend: &TrendSurface) -> Result<(), StaticError> {
+fn apply_areal_trend(
+    grid: &mut Grid,
+    trend: &TrendSurface,
+    georef: Option<Georef>,
+) -> Result<(), StaticError> {
     let dims = grid.dims();
     let (ni, nj, nk) = (dims.ni, dims.nj, dims.nk);
     // Resample the trend to the model areal lattice through the SHARED kernel
     // (`petektools::resample`, via `column_multipliers_on`): a georeferenced trend
     // lands by world coordinate, a bare one is stretched to the column extent. The
     // lattice is reconstructed from the top-layer cell centroids.
-    let lattice = crate::model::pipeline::areal_lattice(grid)?;
+    let local = crate::model::pipeline::areal_lattice(grid)?;
+    let lattice = match georef {
+        Some(g) if trend.is_georeferenced() => petektools::Lattice {
+            xori: g.origin_x,
+            yori: g.origin_y,
+            xinc: g.spacing_x,
+            yinc: g.spacing_y,
+            ncol: ni,
+            nrow: nj,
+            rotation_deg: g.rotation_deg,
+            yflip: g.yflip,
+        },
+        _ => local,
+    };
     let mult = trend.column_multipliers_on(&lattice)?;
 
     let mut targets = vec![NTG];

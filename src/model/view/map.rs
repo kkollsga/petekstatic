@@ -560,7 +560,7 @@ mod tests {
                 "zone_averages",
             ]
         );
-        assert_eq!(obj["schema_version"], serde_json::json!(5));
+        assert_eq!(obj["schema_version"], serde_json::json!(6));
         // A layer's own key structure (legend metadata included).
         let layer = obj["horizons"][0].as_object().unwrap();
         let mut lkeys: Vec<&str> = layer.keys().map(String::as_str).collect();

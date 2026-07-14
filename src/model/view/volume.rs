@@ -555,7 +555,7 @@ mod tests {
         let mut out = Vec::new();
         b.write_self_contained(&mut out).unwrap();
         let env: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        assert_eq!(env["schema_version"], serde_json::json!(5));
+        assert_eq!(env["schema_version"], serde_json::json!(6));
         assert_eq!(env["encoding"], serde_json::json!("base64"));
         let blk = &env["blocks"];
         let dec = |name: &str| {
@@ -633,7 +633,7 @@ mod tests {
             ]
         );
         assert_eq!(env["kind"], serde_json::json!("volume"));
-        assert_eq!(env["schema_version"], serde_json::json!(5));
+        assert_eq!(env["schema_version"], serde_json::json!(6));
         // Block names + dtypes are the decode contract.
         let blocks = env["blocks"].as_object().unwrap();
         let mut bnames: Vec<&str> = blocks.keys().map(String::as_str).collect();

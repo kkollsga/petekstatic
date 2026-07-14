@@ -36,6 +36,8 @@ struct Georef {
     origin_y: f64,
     node_dx: f64,
     node_dy: f64,
+    rotation_deg: f64,
+    yflip: bool,
 }
 
 /// A gridded areal multiplier field on its own `ncol × nrow` lattice (row-major,
@@ -103,12 +105,37 @@ impl TrendSurface {
     /// (stays index-space).
     #[must_use]
     pub fn with_georef(mut self, origin_x: f64, origin_y: f64, node_dx: f64, node_dy: f64) -> Self {
-        if node_dx.is_finite() && node_dx > 0.0 && node_dy.is_finite() && node_dy > 0.0 {
+        self = self.with_oriented_georef(origin_x, origin_y, node_dx, node_dy, 0.0, false);
+        self
+    }
+
+    /// Georeference the trend on an oriented world lattice. Rotation is finite
+    /// degrees counter-clockwise from world +X/east to positive I; `yflip`
+    /// reverses J. Invalid spacing/rotation leaves the trend unregistered.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_oriented_georef(
+        mut self,
+        origin_x: f64,
+        origin_y: f64,
+        node_dx: f64,
+        node_dy: f64,
+        rotation_deg: f64,
+        yflip: bool,
+    ) -> Self {
+        if node_dx.is_finite()
+            && node_dx > 0.0
+            && node_dy.is_finite()
+            && node_dy > 0.0
+            && rotation_deg.is_finite()
+        {
             self.georef = Some(Georef {
                 origin_x,
                 origin_y,
                 node_dx,
                 node_dy,
+                rotation_deg: rotation_deg.rem_euclid(360.0),
+                yflip,
             });
         }
         self
@@ -145,9 +172,16 @@ impl TrendSurface {
             self.values[r * self.ncol + c]
         });
         let src_georef = match self.georef {
-            Some(g) => Lattice::regular(
-                g.origin_x, g.origin_y, g.node_dx, g.node_dy, self.ncol, self.nrow,
-            ),
+            Some(g) => Lattice {
+                xori: g.origin_x,
+                yori: g.origin_y,
+                xinc: g.node_dx,
+                yinc: g.node_dy,
+                ncol: self.ncol,
+                nrow: self.nrow,
+                rotation_deg: g.rotation_deg,
+                yflip: g.yflip,
+            },
             None => {
                 // Index-space: stretch the source across the target's extent so node
                 // (0,0) lands on the target origin and (ncol-1, nrow-1) on its far node.

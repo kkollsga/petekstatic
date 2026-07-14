@@ -39,18 +39,20 @@ impl ValueRange {
     }
 }
 
-/// The areal georeference all map layers share: a regular, axis-aligned lattice
+/// The areal georeference all map layers share: a regular, orientable lattice
 /// of the grid's **column centroids** (the same `xy↔ij` frame the property
 /// pipeline + well registration use). `origin_*` is the world `(x, y)` of node
 /// `(0, 0)` (column `(0, 0)`'s centroid); `spacing_*` the node spacing;
 /// `ncol == ni`, `nrow == nj`. World `(x, y)` of node `(i, j)` is
-/// `(origin_x + i * spacing_x, origin_y + j * spacing_y)`.
+/// `rotation_deg` is counter-clockwise from world +X/east to positive I;
+/// `yflip` reverses positive J. Zero/default orientation is the historical
+/// axis-aligned frame and omits the additive JSON members.
 ///
 /// When the model carries a registered world [`Georef`] the frame is that world
 /// lattice (so the raster overlays the world outline / wells and a world
 /// fence/bore section traces through it); with no georeference it degenerates to
 /// the grid's own local column-centroid lattice (the synthetic square / box).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct GridFrame {
     pub origin_x: f64,
     pub origin_y: f64,
@@ -60,6 +62,20 @@ pub struct GridFrame {
     pub ncol: usize,
     /// Node count along y (== grid `nj`).
     pub nrow: usize,
+    /// Counter-clockwise rotation from world +X/east to the positive I axis.
+    #[serde(default, skip_serializing_if = "is_zero_rotation")]
+    pub rotation_deg: f64,
+    /// Whether positive J runs opposite the rotated positive-Y direction.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub yflip: bool,
+}
+
+fn is_zero_rotation(value: &f64) -> bool {
+    *value == 0.0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl GridFrame {
@@ -89,6 +105,8 @@ impl GridFrame {
                 spacing_y: g.spacing_y,
                 ncol,
                 nrow,
+                rotation_deg: g.rotation_deg,
+                yflip: g.yflip,
             });
         }
         let lat = areal_lattice(grid)?;
@@ -99,7 +117,37 @@ impl GridFrame {
             spacing_y: lat.yinc,
             ncol: lat.ncol,
             nrow: lat.nrow,
+            rotation_deg: lat.rotation_deg,
+            yflip: lat.yflip,
         })
+    }
+
+    /// World coordinates for fractional intrinsic `(i, j)` coordinates.
+    #[must_use]
+    pub fn intrinsic_to_world(self, fi: f64, fj: f64) -> (f64, f64) {
+        Georef {
+            origin_x: self.origin_x,
+            origin_y: self.origin_y,
+            spacing_x: self.spacing_x,
+            spacing_y: self.spacing_y,
+            rotation_deg: self.rotation_deg,
+            yflip: self.yflip,
+        }
+        .intrinsic_to_world(fi, fj)
+    }
+
+    /// Exact world-to-intrinsic inverse used by section/cursor consumers.
+    #[must_use]
+    pub fn world_to_intrinsic(self, x: f64, y: f64) -> Option<(f64, f64)> {
+        Georef {
+            origin_x: self.origin_x,
+            origin_y: self.origin_y,
+            spacing_x: self.spacing_x,
+            spacing_y: self.spacing_y,
+            rotation_deg: self.rotation_deg,
+            yflip: self.yflip,
+        }
+        .world_to_intrinsic(x, y)
     }
 }
 

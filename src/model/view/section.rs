@@ -178,6 +178,11 @@ pub struct IntersectionBundle {
     pub zones: Vec<SectionZone>,
     /// Section-wide fluid contacts (GOC / OWC / GWC depths).
     pub contacts: Vec<SectionContact>,
+    /// The world frame in which every column `(x, y)` is expressed
+    /// (SCHEMA_VERSION 6). Optional so pre-v6 payloads deserialize and reserialize
+    /// without changing their member order or shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<GridFrame>,
 }
 
 impl IntersectionBundle {
@@ -473,6 +478,7 @@ impl StaticModel {
             horizon_traces,
             zones: section_zones,
             contacts,
+            frame: Some(frame),
         })
     }
 }
@@ -645,63 +651,59 @@ fn fence_edge_depths(cell: &Cell, px: f64, py: f64, dx: f64, dy: f64) -> (f64, f
 /// world line misses every local rectangle (`smin > smax`) and silently degrades to
 /// the centroid (the `task_petekstatic_section_edge_frame` defect).
 ///
-/// Both frames are regular/axis-aligned, so the map is per-axis affine:
-/// `local = lat_ori + (world − frame_ori) · (lat_inc / frame_inc)`. When the view
-/// frame *is* the local lattice (no georef, or a grid whose corners are themselves
-/// world-valued) origins + spacings coincide and this reduces to the identity — the
-/// local fixtures stay bit-for-bit.
+/// The world point first passes through the frame's exact rotated inverse, then
+/// through petekTools' canonical local-lattice placement. When the view frame is
+/// the local lattice this reduces to identity — legacy fixtures stay bit-for-bit.
 struct WorldToLattice {
-    frame_ox: f64,
-    frame_oy: f64,
-    lat_ox: f64,
-    lat_oy: f64,
-    scale_x: f64,
-    scale_y: f64,
+    frame: GridFrame,
+    lat: Lattice,
 }
 
 impl WorldToLattice {
     /// Build the map from the view [`GridFrame`] to the grid's local [`Lattice`].
     fn new(frame: &GridFrame, lat: &Lattice) -> Self {
-        let scale = |lat_inc: f64, frame_inc: f64| {
-            if frame_inc != 0.0 {
-                lat_inc / frame_inc
-            } else {
-                1.0
-            }
-        };
         Self {
-            frame_ox: frame.origin_x,
-            frame_oy: frame.origin_y,
-            lat_ox: lat.xori,
-            lat_oy: lat.yori,
-            scale_x: scale(lat.xinc, frame.spacing_x),
-            scale_y: scale(lat.yinc, frame.spacing_y),
+            frame: *frame,
+            lat: lat.clone(),
         }
     }
 
     /// A view-frame `(x, y)` in the local lattice frame.
     fn point(&self, x: f64, y: f64) -> (f64, f64) {
-        (
-            self.lat_ox + (x - self.frame_ox) * self.scale_x,
-            self.lat_oy + (y - self.frame_oy) * self.scale_y,
-        )
+        let Some((fi, fj)) = self.frame.world_to_intrinsic(x, y) else {
+            return (f64::NAN, f64::NAN);
+        };
+        lattice_intrinsic_to_world(&self.lat, fi, fj)
     }
 
     /// A view-frame direction `(dx, dy)` in the local lattice frame (origin-free).
     fn dir(&self, dx: f64, dy: f64) -> (f64, f64) {
-        (dx * self.scale_x, dy * self.scale_y)
+        let (x0, y0) = (self.frame.origin_x, self.frame.origin_y);
+        let p0 = self.point(x0, y0);
+        let p1 = self.point(x0 + dx, y0 + dy);
+        (p1.0 - p0.0, p1.1 - p0.1)
     }
 }
 
-/// World `(x, y)` → fractional `(i, j)` on the areal frame (regular axis-aligned).
-fn frame_xy_to_ij(frame: &GridFrame, x: f64, y: f64) -> Option<(f64, f64)> {
-    if frame.spacing_x == 0.0 || frame.spacing_y == 0.0 {
-        return None;
+/// Fractional intrinsic coordinates placed through petekTools' canonical lattice
+/// transform without duplicating orientation math in this library.
+fn lattice_intrinsic_to_world(lat: &Lattice, fi: f64, fj: f64) -> (f64, f64) {
+    Lattice {
+        xori: lat.xori,
+        yori: lat.yori,
+        xinc: lat.xinc * fi,
+        yinc: lat.yinc * fj,
+        ncol: 2,
+        nrow: 2,
+        rotation_deg: lat.rotation_deg,
+        yflip: lat.yflip,
     }
-    Some((
-        (x - frame.origin_x) / frame.spacing_x,
-        (y - frame.origin_y) / frame.spacing_y,
-    ))
+    .node_xy(1, 1)
+}
+
+/// World `(x, y)` → fractional intrinsic `(i, j)` on the areal frame.
+fn frame_xy_to_ij(frame: &GridFrame, x: f64, y: f64) -> Option<(f64, f64)> {
+    frame.world_to_intrinsic(x, y)
 }
 
 #[cfg(test)]
@@ -1361,6 +1363,7 @@ mod tests {
                 "base_name",
                 "columns",
                 "contacts",
+                "frame",
                 "horizon_traces",
                 "inputs_ref",
                 "property",
@@ -1392,6 +1395,17 @@ mod tests {
                 "zone_ids",
             ]
         );
+
+        // An explicit pre-v6 payload has no section frame. The new reader
+        // defaults it to None and re-emits the exact legacy member sequence.
+        let mut old = b.clone();
+        old.schema_version = 5;
+        old.frame = None;
+        let old_json = serde_json::to_string(&old).unwrap();
+        assert!(!old_json.contains("\"frame\""));
+        let old_back: IntersectionBundle = serde_json::from_str(&old_json).unwrap();
+        assert_eq!(old_back.frame, None);
+        assert_eq!(serde_json::to_string(&old_back).unwrap(), old_json);
     }
 
     /// A 3-horizon / 2-zone flat stack model, UPPER coloured, LOWER uncoloured — the
@@ -1503,6 +1517,6 @@ mod tests {
         let json = serde_json::to_string(&b).unwrap();
         let back: IntersectionBundle = serde_json::from_str(&json).unwrap();
         assert_eq!(b, back);
-        assert_eq!(b.schema_version, 5);
+        assert_eq!(b.schema_version, 6);
     }
 }

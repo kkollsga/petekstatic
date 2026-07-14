@@ -22,7 +22,7 @@ SYNTH_FIXTURE = (
 CONFIDENTIAL_DATA = Path(
     os.environ.get(
         "PETEK_CONFIDENTIAL_DATA",
-        "/Volumes/EksternalHome/Data/modellingProject/Data",
+        "a local real-dataset folder",
     )
 )
 

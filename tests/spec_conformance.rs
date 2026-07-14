@@ -18,10 +18,10 @@
 
 use petekstatic::gridder::{Conformity, ExtrapolationPolicy, SolveOpts};
 use petekstatic::model::{
-    BuildOpts, BuildSpec, ConstantPriors, Georef, HorizonSource, HorizonStack, McSettings, Pick,
-    RealizationDraw, StackFrame, StackHorizon, StackZone, StaticModel, StaticModelBuilder,
-    StaticModelTemplate, StructuralPerturbation, TieMethod, TieSettings, WellTie, WorldPoint,
-    ZoneDraw,
+    BuildOpts, BuildSpec, ConstantPriors, Georef, GridFrame, HorizonSource, HorizonStack,
+    McSettings, Pick, RealizationDraw, StackFrame, StackHorizon, StackZone, StaticModel,
+    StaticModelBuilder, StaticModelTemplate, StructuralPerturbation, TieMethod, TieSettings,
+    WellTie, WorldPoint, ZoneDraw,
 };
 use petekstatic::wireframe::{Contact, ContactKind, GriddedDepth, Hardness};
 use serde::{de::DeserializeOwned, Serialize};
@@ -199,6 +199,35 @@ fn round_trips_value_equal() {
 
     // McInputs: deliberately absent — blocked on petekTools Sampler/Clamped serde
     // (see the module docs). Slot it in here when the upstream derives land.
+}
+
+#[test]
+fn zero_orientation_preserves_legacy_georef_and_frame_json() {
+    let georef = Georef::new(431_000.0, 6_521_000.0, 50.0, 62.5).unwrap();
+    let legacy_georef =
+        r#"{"origin_x":431000.0,"origin_y":6521000.0,"spacing_x":50.0,"spacing_y":62.5}"#;
+    assert_eq!(serde_json::to_string(&georef).unwrap(), legacy_georef);
+    assert_eq!(
+        serde_json::from_str::<Georef>(legacy_georef).unwrap(),
+        georef
+    );
+
+    let frame = GridFrame {
+        origin_x: 431_000.0,
+        origin_y: 6_521_000.0,
+        spacing_x: 50.0,
+        spacing_y: 62.5,
+        ncol: 4,
+        nrow: 3,
+        rotation_deg: 0.0,
+        yflip: false,
+    };
+    let legacy_frame = r#"{"origin_x":431000.0,"origin_y":6521000.0,"spacing_x":50.0,"spacing_y":62.5,"ncol":4,"nrow":3}"#;
+    assert_eq!(serde_json::to_string(&frame).unwrap(), legacy_frame);
+    assert_eq!(
+        serde_json::from_str::<GridFrame>(legacy_frame).unwrap(),
+        frame
+    );
 }
 
 // ---------------------------------------------------------------------------

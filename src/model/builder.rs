@@ -511,12 +511,9 @@ impl StaticModelBuilder {
     ) -> Result<Self, StaticError> {
         condition_scatter(&mut stack, &frame)?;
         let g = frame.georef;
-        Ok(Self::from_horizon_stack(stack, opts)?.with_georef(
-            g.origin_x,
-            g.origin_y,
-            g.spacing_x,
-            g.spacing_y,
-        ))
+        let mut out = Self::from_horizon_stack(stack, opts)?;
+        out.spec.georef = Some(g);
+        Ok(out)
     }
 
     /// **Condition a raw-scatter stack onto `frame` ONCE** — the expensive
@@ -729,6 +726,31 @@ impl StaticModelBuilder {
         self
     }
 
+    /// Register an oriented world georeference. `rotation_deg` is
+    /// counter-clockwise from world +X/east to positive I; `yflip` reverses J.
+    /// The model grid remains local; orientation is applied only at world seams.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_oriented_georef(
+        mut self,
+        origin_x: f64,
+        origin_y: f64,
+        spacing_x: f64,
+        spacing_y: f64,
+        rotation_deg: f64,
+        yflip: bool,
+    ) -> Self {
+        self.spec.georef = Georef::oriented(
+            origin_x,
+            origin_y,
+            spacing_x,
+            spacing_y,
+            rotation_deg,
+            yflip,
+        );
+        self
+    }
+
     /// Register the **world** areal boundary ring for a horizon-stack build — the
     /// study-area closure the map bundle overlays (`world [x, y]`, first == last point
     /// to close). The `from_horizon_stack` path has no wireframe to source a boundary
@@ -937,6 +959,7 @@ impl StaticModelBuilder {
             self.opts.priors,
             self.logs.as_deref(),
             self.trend.as_ref(),
+            self.spec.georef,
         )?;
 
         // P5 per-property geostatistical population: each pipeline upscales its logs
@@ -1240,6 +1263,7 @@ impl StaticModelBuilder {
             self.opts.priors,
             self.logs.as_deref(),
             self.trend.as_ref(),
+            self.spec.georef,
         )?;
         let mut property_reports = Vec::with_capacity(self.properties.len());
         for pipe in &self.properties {
@@ -1601,8 +1625,8 @@ impl ScatterConditioner {
             }
             // World → fractional node: the +0.5 undoes the column-centroid origin so
             // a point at node `ip` maps to exactly `ip`.
-            let fi = (p.x - g.origin_x) / g.spacing_x + 0.5;
-            let fj = (p.y - g.origin_y) / g.spacing_y + 0.5;
+            let (fi, fj) = g.world_to_intrinsic(p.x, p.y)?;
+            let (fi, fj) = (fi + 0.5, fj + 0.5);
             if fi < -0.5 || fj < -0.5 || fi > nx as f64 - 0.5 || fj > ny as f64 - 0.5 {
                 continue; // off the frame — no data support here
             }
@@ -1711,8 +1735,10 @@ fn grid_scatter_sor_fallback(
         if !(p.x.is_finite() && p.y.is_finite() && p.depth_m.is_finite()) {
             continue;
         }
-        let fi = (p.x - g.origin_x) / g.spacing_x + 0.5;
-        let fj = (p.y - g.origin_y) / g.spacing_y + 0.5;
+        let Some((fi, fj)) = g.world_to_intrinsic(p.x, p.y) else {
+            continue;
+        };
+        let (fi, fj) = (fi + 0.5, fj + 0.5);
         if fi < -0.5 || fj < -0.5 || fi > nx as f64 - 0.5 || fj > ny as f64 - 0.5 {
             continue;
         }
@@ -2196,16 +2222,16 @@ pub(crate) fn stack_boundary_ring(
     }
     if let Some(g) = georef {
         let (ni, nj) = ((nx - 1) as f64, (ny - 1) as f64);
-        let xmin = g.origin_x - g.spacing_x / 2.0;
-        let xmax = g.origin_x + (ni - 0.5) * g.spacing_x;
-        let ymin = g.origin_y - g.spacing_y / 2.0;
-        let ymax = g.origin_y + (nj - 0.5) * g.spacing_y;
+        let p00 = g.intrinsic_to_world(-0.5, -0.5);
+        let p10 = g.intrinsic_to_world(ni - 0.5, -0.5);
+        let p11 = g.intrinsic_to_world(ni - 0.5, nj - 0.5);
+        let p01 = g.intrinsic_to_world(-0.5, nj - 0.5);
         return vec![
-            [xmin, ymin],
-            [xmax, ymin],
-            [xmax, ymax],
-            [xmin, ymax],
-            [xmin, ymin],
+            [p00.0, p00.1],
+            [p10.0, p10.1],
+            [p11.0, p11.1],
+            [p01.0, p01.1],
+            [p00.0, p00.1],
         ];
     }
     vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]
@@ -2923,8 +2949,7 @@ mod scatter_conditioner_tests {
             for i in 0..11 {
                 let fi = i as f64 + 0.37;
                 let fj = j as f64 + 0.61;
-                let x = g.origin_x + (fi - 0.5) * g.spacing_x;
-                let y = g.origin_y + (fj - 0.5) * g.spacing_y;
+                let (x, y) = g.intrinsic_to_world(fi - 0.5, fj - 0.5);
                 pts.push(WorldPoint {
                     x,
                     y,

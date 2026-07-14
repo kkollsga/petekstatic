@@ -36,7 +36,9 @@ serde.workspace = true
 # ndarray Array2 at the seam — pinned to petekTools' version.
 ndarray = "0.17"
 # The `view` bundles + the spill store header + the volume binary-block schema.
-serde_json = "1"
+# View-bundle world coordinates must survive direct JSON wire round-trips
+# bit-for-bit, including large rotated easting/northing values.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # Ratified Send/Sync compile-time assertions on the template + model.
 static_assertions = "1"
 # Rayon shards the structured-MC draw loop (one template clone per worker).
@@ -79,7 +81,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.12"
+version = "0.1.13"
 edition = "2021"
 # BSL-1.1 declared via its SPDX identifier (BUSL-1.1). The full text ships as the
 # repo-root LICENSE; the SPDX id is what crates.io / PyPI surface. (A workspace-
@@ -91,12 +93,12 @@ rust-version = "1.80"
 
 [workspace.dependencies]
 # The consolidated library crate (the py binding crate depends on it).
-petekstatic = { path = ".", version = "0.1.12" }
+petekstatic = { path = ".", version = "0.1.13" }
 # CROSS-REPO family deps: resolved from crates.io (the family is published; the
 # dev-only [patch.crates-io] was removed at launch).
 # petekTools (pure-leaf toolkit, downstream DAG edge): gridding kernels
 # (ConvergentGridder / warm-start), units, and the pproj container.
-petektools = "0.2.7"
+petektools = "0.2.15"
 # petekio (DATA layer): used only by the optional `petekio-adapter` feature.
 petekio = "0.3.8"
 thiserror = "2"

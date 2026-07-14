@@ -31,8 +31,9 @@ use std::sync::Arc;
 /// case** (a synthetic square / box with no world georeference), for which the
 /// frame falls back to the grid's own local column-centroid lattice.
 ///
-/// Column `(i, j)`'s world centroid is
-/// `(origin_x + i * spacing_x, origin_y + j * spacing_y)`.
+/// `rotation_deg` is counter-clockwise from world +X/east to the positive I
+/// axis; `yflip` reverses the positive J direction.  The zero/default values
+/// preserve the historical axis-aligned mapping.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Georef {
     /// World `x` of column `(0, 0)`'s centroid.
@@ -43,6 +44,20 @@ pub struct Georef {
     pub spacing_x: f64,
     /// World column spacing along `y` (metres).
     pub spacing_y: f64,
+    /// Counter-clockwise rotation from world +X/east to the positive I axis.
+    #[serde(default, skip_serializing_if = "is_zero_rotation")]
+    pub rotation_deg: f64,
+    /// Whether positive J runs opposite the rotated positive-Y direction.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub yflip: bool,
+}
+
+fn is_zero_rotation(value: &f64) -> bool {
+    *value == 0.0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Georef {
@@ -52,22 +67,82 @@ impl Georef {
     /// [`crate::model::TrendSurface::with_georef`].
     #[must_use]
     pub fn new(origin_x: f64, origin_y: f64, spacing_x: f64, spacing_y: f64) -> Option<Self> {
+        Self::oriented(origin_x, origin_y, spacing_x, spacing_y, 0.0, false)
+    }
+
+    /// Build an oriented world georeference. Rotation is finite degrees
+    /// counter-clockwise from world +X/east to positive I and is normalized to
+    /// `[0, 360)`; `yflip` reverses positive J. Invalid values return `None`.
+    #[must_use]
+    pub fn oriented(
+        origin_x: f64,
+        origin_y: f64,
+        spacing_x: f64,
+        spacing_y: f64,
+        rotation_deg: f64,
+        yflip: bool,
+    ) -> Option<Self> {
         if origin_x.is_finite()
             && origin_y.is_finite()
             && spacing_x.is_finite()
             && spacing_x > 0.0
             && spacing_y.is_finite()
             && spacing_y > 0.0
+            && rotation_deg.is_finite()
         {
+            let rotation_deg = rotation_deg.rem_euclid(360.0);
             Some(Self {
                 origin_x,
                 origin_y,
                 spacing_x,
                 spacing_y,
+                rotation_deg: if rotation_deg == 0.0 {
+                    0.0
+                } else {
+                    rotation_deg
+                },
+                yflip,
             })
         } else {
             None
         }
+    }
+
+    /// World coordinates for fractional intrinsic lattice coordinates.
+    /// Delegates orientation to petekTools' canonical [`petektools::Lattice`]
+    /// transform while retaining petekStatic's small seam type.
+    #[must_use]
+    pub fn intrinsic_to_world(self, fi: f64, fj: f64) -> (f64, f64) {
+        // petekTools 0.2.7 exposes the canonical transform at integer nodes.
+        // Scaling the two increments by the fractional coordinates makes node
+        // (1,1) the requested intrinsic point without duplicating rotation math.
+        petektools::Lattice {
+            xori: self.origin_x,
+            yori: self.origin_y,
+            xinc: self.spacing_x * fi,
+            yinc: self.spacing_y * fj,
+            ncol: 2,
+            nrow: 2,
+            rotation_deg: self.rotation_deg,
+            yflip: self.yflip,
+        }
+        .node_xy(1, 1)
+    }
+
+    /// Exact world-to-intrinsic inverse for this frame.
+    #[must_use]
+    pub fn world_to_intrinsic(self, x: f64, y: f64) -> Option<(f64, f64)> {
+        petektools::Lattice {
+            xori: self.origin_x,
+            yori: self.origin_y,
+            xinc: self.spacing_x,
+            yinc: self.spacing_y,
+            ncol: 1,
+            nrow: 1,
+            rotation_deg: self.rotation_deg,
+            yflip: self.yflip,
+        }
+        .xy_to_ij(x, y)
     }
 }
 

@@ -718,10 +718,13 @@ Three bundles, one shared frame:
   `srs-core/mesh.rs` per the layer charter; peteksim retires its copy onto this
   bundle at the viewer wave).
 
-**Contract conventions.** All areal layers share one regular `GridFrame`
-(origin + spacing + `ncol=ni` / `nrow=nj`), reconstructed from the grid's
-column-centroid lattice (the `xy↔ij` map — the same frame the property pipeline
-uses); row-major `values[j*ncol + i]`; `f64::NAN` = undefined/outside (JSON
+**Contract conventions.** All areal layers share one regular, orientable
+`GridFrame` (origin + spacing + `ncol=ni` / `nrow=nj` + intrinsic rotation/J
+handedness), reconstructed from the grid's column-centroid lattice (the `xy↔ij`
+map — the same frame the property pipeline uses). `rotation_deg` is
+counter-clockwise from world +X/east to positive I; `yflip` reverses positive J.
+These are intrinsic model orientation, independent of viewer camera rotation;
+row-major `values[j*ncol + i]`; `f64::NAN` = undefined/outside (JSON
 `null`). SI units, positive-down depth. The serialized **key structure** is the
 cross-codebase seam — documented in `API.md`, version-tagged (`SCHEMA_VERSION`),
 and locked by a schema-snapshot test per bundle.
@@ -732,8 +735,9 @@ real-data configuration is a **LOCAL-origin cell lattice + a registered world
 (the view `GridFrame`), but a cell's ZCORN `corners` live in the grid's **local**
 lattice. Any geometry that consumes both a spec point *and* the raw corners —
 notably `intersection_bundle`'s `fence_edge_depths` areal clip — **must convert to
-one frame first** (map the world point + direction into the local lattice via the
-`WorldToLattice` affine, or the corners into world). Mixing frames does not error;
+one frame first** (map world through the oriented frame's exact inverse and then
+into the local lattice, or map the corners into world). Local grid/population
+kernels stay axis-aligned; orientation exists only at the world seam. Mixing frames does not error;
 it silently produces garbage — a world line misses every local cell rectangle and
 the section collapses to a flat centroid trace. This has now bitten **three** times
 (the bundle-frame F5 zero-columns bug, the collocated-trend no-op, and the

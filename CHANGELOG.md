@@ -6,6 +6,21 @@ All notable changes to petekStatic are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added
+- Added oriented model view frames: `Georef`/`GridFrame` now carry additive
+  `rotation_deg` (counter-clockwise east-to-I) and `yflip`, with exact forward /
+  inverse transforms delegated to petekTools' lattice convention. Builders,
+  templates, and `BuildSpec` expose `with_oriented_georef`; default stack outlines,
+  wells, maps, and section traces share the same rotated world frame.
+- Advanced view bundles to schema version 6 and appended an optional section
+  `frame`, allowing consumers to interpret every column coordinate. Pre-v6
+  sections and zero-orientation Georef/Frame JSON remain backward-readable and
+  preserve their existing serialized shape/member order.
+
+### Changed
+- Enabled serde_json's exact float-roundtrip parser for bundle coordinates, so
+  large rotated world coordinates survive direct JSON wire round-trips bit-for-bit.
+
 ## [0.1.12] - 2026-07-10
 
 ### Changed

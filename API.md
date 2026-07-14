@@ -633,6 +633,7 @@ impl TrendSurface {
     pub fn new(ncol: usize, nrow: usize, values: Vec<f64>) -> Result<TrendSurface>;  // finite >= 0; NaN ok
     pub fn with_porosity(self) -> Self;              // also modulate PORO (NTG always)
     pub fn with_georef(self, origin_x: f64, origin_y: f64, node_dx: f64, node_dy: f64) -> Self;  // R4: resample by world (x,y), not index fraction
+    pub fn with_oriented_georef(self, origin_x: f64, origin_y: f64, node_dx: f64, node_dy: f64, rotation_deg: f64, yflip: bool) -> Self;
     pub fn is_georeferenced(&self) -> bool;
     pub fn applies_to_porosity(&self) -> bool;
 }
@@ -671,6 +672,7 @@ pub struct BuildSpec {
 impl BuildSpec {   // Default = every knob at the historical default; with_* sugar mirrors the consumers'
     pub fn new() -> BuildSpec;
     pub fn with_inputs_ref(self, r: impl Into<String>) -> Self;  pub fn with_georef(self, ox: f64, oy: f64, sx: f64, sy: f64) -> Self;
+    pub fn with_oriented_georef(self, ox: f64, oy: f64, sx: f64, sy: f64, rotation_deg: f64, yflip: bool) -> Self;
     pub fn with_boundary(self, ring: Vec<[f64; 2]>) -> Self;     pub fn with_extrapolation(self, p: ExtrapolationPolicy) -> Self;
     pub fn with_clamp_base_to_top(self, c: bool) -> Self;        pub fn with_min_thickness_m(self, m: f64) -> Self;
     pub fn with_collapse_below_m(self, m: f64) -> Self;          pub fn with_sugar_cube(self, s: bool) -> Self;
@@ -709,6 +711,7 @@ impl StaticModelBuilder {
     pub fn with_sw_gas(self, sw_gas: f64) -> Self;                            // R3: gas-cap connate water for a two-contact in_place split
     pub fn with_inputs_ref(self, inputs_ref: impl Into<String>) -> Self;
     pub fn with_georef(self, origin_x: f64, origin_y: f64, spacing_x: f64, spacing_y: f64) -> Self;  // register the model's WORLD frame (column (0,0) centroid + spacing) so view bundles emit ONE world frame; non-positive spacing ignored; grid geometry untouched
+    pub fn with_oriented_georef(self, origin_x: f64, origin_y: f64, spacing_x: f64, spacing_y: f64, rotation_deg: f64, yflip: bool) -> Self; // CCW east→+I; grid kernels remain local
     pub fn with_boundary(self, ring: Vec<[f64; 2]>) -> Self;                  // from_horizon_stack: world outline ring for the map bundle; omitted -> a world-extent rectangle from the georef (never the unit square vs a world frame)
     pub fn with_sugar_cube(self, sugar_cube: bool) -> Self;                   // section rendering: false (default) = dip-following trapezoids; true = flat boxes -> IntersectionBundle.sugar_cube + flattened edge arrays
     pub fn with_spec(self, spec: BuildSpec) -> Self;                          // install the WHOLE declarative config in one call (the with_* above are the same sugar); bit-identical results, pinned by tests/spec_conformance.rs
@@ -755,6 +758,7 @@ impl StaticModelTemplate {
     pub fn with_collapse_below_m(self, collapse_below_m: f64) -> Self;  // per-realization cell-collapse (volume-conserving); warns CellsCollapsed
     pub fn with_inputs_ref(self, inputs_ref: impl Into<String>) -> Self;
     pub fn with_georef(self, origin_x: f64, origin_y: f64, spacing_x: f64, spacing_y: f64) -> Self;  // stamp the WORLD frame onto every realized model (see StaticModelBuilder::with_georef)
+    pub fn with_oriented_georef(self, origin_x: f64, origin_y: f64, spacing_x: f64, spacing_y: f64, rotation_deg: f64, yflip: bool) -> Self;
     pub fn with_boundary(self, ring: Vec<[f64; 2]>) -> Self;  // stack-aware: world outline ring stamped onto each realized map bundle (see StaticModelBuilder::with_boundary)
     pub fn with_spec(self, spec: BuildSpec) -> Result<StaticModelTemplate>;   // install the WHOLE declarative config (the SAME BuildSpec the builder consumes); re-applies extrapolation + ties through the setters above — bit-identical, pinned
     /// The CHEAP per-realization call: warm-started solve, re-layer, re-populate.
@@ -1050,10 +1054,11 @@ RSS spike): map/section via `write_json`; the volume bundle via its binary-block
 envelope writers (below).
 
 ```rust
-pub const SCHEMA_VERSION: u32 = 5;   // v3: volume exterior-shell + binary blocks
+pub const SCHEMA_VERSION: u32 = 6;   // v3: volume exterior-shell + binary blocks
                                      // v4: section HorizonTrace polylines + MapBundle per-well `ties`
                                      // v5: section colour-by-zone — IntersectionBundle.zones + SectionColumn.zone_ids
-                                     //     (all additive #[serde(default)] fields; an older decoder ignoring unknown keys still reads v5)
+                                     // v6: oriented GridFrame + optional IntersectionBundle.frame
+                                     //     (additive/defaulted; an older decoder ignoring unknown keys still reads v6)
                                      // map/section: plain JSON, carry the family version
 impl MapBundle          { pub fn write_json<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()>; }
 impl IntersectionBundle { pub fn write_json<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()>; }
@@ -1061,15 +1066,23 @@ impl IntersectionBundle { pub fn write_json<W: std::io::Write>(&self, w: &mut W)
 // The model's registered WORLD georeference (StaticModelBuilder::with_georef):
 // world (x,y) of column (0,0)'s centroid + world column spacing. Some -> the
 // view frames are WORLD; None -> the local degenerate frame (synthetic square/box).
-pub struct Georef { pub origin_x, origin_y, spacing_x, spacing_y: f64 }
-impl Georef { pub fn new(origin_x, origin_y, spacing_x, spacing_y: f64) -> Option<Georef>; }  // None if spacing not finite-positive
+pub struct Georef { pub origin_x, origin_y, spacing_x, spacing_y: f64,
+                    pub rotation_deg: f64, pub yflip: bool }
+impl Georef {
+    pub fn new(origin_x, origin_y, spacing_x, spacing_y: f64) -> Option<Georef>; // zero rotation, no flip
+    pub fn oriented(origin_x, origin_y, spacing_x, spacing_y: f64,
+                    rotation_deg: f64, yflip: bool) -> Option<Georef>;
+    pub fn intrinsic_to_world(self, fi: f64, fj: f64) -> (f64, f64);
+    pub fn world_to_intrinsic(self, x: f64, y: f64) -> Option<(f64, f64)>;
+}
 
 // Shared areal georeference: world (x,y) of node (i,j) = (origin + i*spacing, ...).
 // origin/spacing come from the model's Georef when registered (WORLD frame — the
 // raster overlays the world outline/wells and a world fence/bore section traces
 // through it); otherwise from the grid's local column-centroid lattice.
 pub struct GridFrame { pub origin_x, origin_y, spacing_x, spacing_y: f64,
-                       pub ncol: usize, pub nrow: usize }   // ncol=ni, nrow=nj
+                       pub ncol: usize, pub nrow: usize,
+                       pub rotation_deg: f64, pub yflip: bool }   // ncol=ni, nrow=nj
 pub struct ValueRange { pub min: f64, pub max: f64 }        // over finite entries (legend)
 // A named georeferenced field on the shared frame, row-major values[j*ncol + i].
 pub struct ScalarLayer { pub name: String, pub units: String,
@@ -1169,8 +1182,15 @@ pub struct IntersectionBundle {
     pub horizon_traces: Vec<HorizonTrace>,  // v4: interior-horizon polylines, top->down (empty for a single zone)
     pub zones: Vec<SectionZone>,        // v5-additive: the zone table zone_ids indexes into ([{name,color}], top->base). FROZEN
     pub contacts: Vec<SectionContact>,  // GOC / OWC / GWC depths
+    pub frame: Option<GridFrame>,       // v6-additive/defaulted: world frame for columns.x/y; None when reading pre-v6
 }
 ```
+
+`rotation_deg` is finite degrees counter-clockwise from world +X/east to the
+positive I axis and normalizes to `[0,360)`; `yflip` reverses positive J. The
+zero/false fields are omitted on serialization, so legacy Georef/Frame JSON
+keeps its exact member sequence. Section `frame` is appended and optional so a
+pre-v6 payload deserializes and reserializes without shape drift.
 
 **Section colour-by-zone (SCHEMA_VERSION 5, `task_suite_section_zone_color`).** The
 bundle's `zones` list (`[{name, color}]`, the model's stratigraphic zones top→base)
@@ -1183,7 +1203,7 @@ the single-implicit-zone paths). Both fields are `#[serde(default)]` (additive).
 field names `zone_ids` and `zones: [{name, color}]` are **frozen** — a concurrent
 viewer decodes exactly them.
 
-Errors (`StaticError::InvalidInput`): lattice `< 2x2` or not axis-aligned/regular;
+Errors (`StaticError::InvalidInput`): lattice `< 2x2` or not regular;
 trace with `< 2` vertices; a named property absent.
 
 **`VolumeBundle` — `model.volume_bundle(property: &str) -> Result<VolumeBundle>`** (3-D exterior shell, SCHEMA_VERSION 4)
@@ -1201,7 +1221,7 @@ here** — moved DOWN from petekSim's `srs-core/mesh.rs` (the DAG flows downward
 
 ```rust
 pub struct VolumeBundle {
-    pub schema_version: u32,       // 4
+    pub schema_version: u32,       // current family version (6; binary layout introduced in 4)
     pub inputs_ref: String,
     pub property: String,
     pub cell_count: usize,         // total grid cells (cell_values.len() = shell count)

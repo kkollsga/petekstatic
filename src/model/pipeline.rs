@@ -343,11 +343,26 @@ impl PropertyPipeline {
         let mut log_values: Vec<f64> = Vec::new();
 
         for well in wells {
-            // Convert a world well through the model's exact oriented frame into
-            // the local lattice where cell corners and kernels live.
+            // `WellLog::new` historically accepted local lattice coordinates even
+            // when a model carried an unrotated georef. Preserve that path exactly,
+            // while oriented models prefer the unambiguous world-frame inverse.
+            // The alternate interpretation is only a compatibility fallback when
+            // the preferred one lies outside the model.
+            let in_grid = |p: Option<(f64, f64)>| {
+                p.filter(|(fi, fj)| {
+                    let (i, j) = (fi.round(), fj.round());
+                    i >= 0.0 && j >= 0.0 && i < ni as f64 && j < nj as f64
+                })
+            };
+            let local = || lattice.xy_to_ij(well.x, well.y);
             let intrinsic = match georef {
-                Some(g) => g.world_to_intrinsic(well.x, well.y),
-                None => lattice.xy_to_ij(well.x, well.y),
+                Some(g) if g.rotation_deg != 0.0 || g.yflip => {
+                    in_grid(g.world_to_intrinsic(well.x, well.y)).or_else(|| in_grid(local()))
+                }
+                Some(g) => {
+                    in_grid(local()).or_else(|| in_grid(g.world_to_intrinsic(well.x, well.y)))
+                }
+                None => in_grid(local()),
             };
             let Some((raw_fi, raw_fj)) = intrinsic else {
                 continue;
